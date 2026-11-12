@@ -130,16 +130,17 @@ namespace BlockChain_1
                     return false;
                 }
 
+                if (currentBlock.PreviousHash != previousBlock.Hash)
+                {
+                    return false;
+                }
+
                 var target = new string('0', currentBlock.DifficultyAtMining);
                 if (!currentBlock.Hash.StartsWith(target))
                 {
                     return false;
                 }
 
-                if (currentBlock.Hash.Substring(0, Difficulty) != new string('0', Difficulty))
-                {
-                    return false;
-                }
             }
             return true;
         }

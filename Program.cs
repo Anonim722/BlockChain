@@ -1,8 +1,6 @@
 ﻿using BlockChain_1.Service;
 using BlockChain_1;
-using BlockChain_1;
 using BlockChain_1.Models;
-using BlockChain_1.Service;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 

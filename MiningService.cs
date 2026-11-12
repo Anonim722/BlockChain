@@ -79,6 +79,7 @@ namespace BlockChain_1
                         while (!token.IsCancellationRequested)
                         {
                             var hash = _hashingService.ComputeHash(candidate);
+                            localAttempts++;
 
                             if (hash.Substring(0, difficulty) == target)
                             {
