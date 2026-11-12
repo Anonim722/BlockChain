@@ -14,7 +14,7 @@ namespace BlockChainP32
     {
         //Список блоків у ланцюжку
         public List<Block> Chain { get; set; }
-        public int Difficulty { get; set; } = 4;
+        public int Difficulty { get; set; } = 6;
         private readonly int _adjustmentInterval = 5;
         private readonly double _targetBlockTime = 2.0;
         private readonly MiningService _miningService;
@@ -131,7 +131,7 @@ namespace BlockChainP32
         private void AdjustDifficulty()
         {
             var recent = Chain.Where(b => b.Index > 0).TakeLast(_adjustmentInterval).ToList();
-            if (recent.Count > 0) return;
+            if (recent.Count == 0) return;
 
             var avgTime = recent.Average(b => b.MiningDuration);
 
