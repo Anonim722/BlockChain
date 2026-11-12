@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using BlockChain_1.Models;
 
-namespace BlockChainP32
+namespace BlockChain_1
 {
     public class Block
     {
@@ -13,9 +14,9 @@ namespace BlockChainP32
         //Час створення блоку
         public DateTime TimeStamp { get; set; }
         //Дані, які зберігаються в блоці
-        public string Data { get; set; }
+        public List<Transaction> Transactions { get; set; } = new List<Transaction>();
         //Автор запису
-        public string Author { get; set; }
+
 
         //Хеш попереднього блоку
         public string PreviousHash { get; set; }

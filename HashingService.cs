@@ -4,14 +4,17 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Security.Cryptography;
+using BlockChain_1.Models;
 
-namespace BlockChainP32
+namespace BlockChain_1
 {
     public class HashingService
     {
         public string ComputeHash(Block block)
         {
-            var blockData = $"{block.Index}{block.TimeStamp}{block.Data}{block.Author}{block.PreviousHash}{block.Nonce}{block.DifficultyAtMining}";
+            var transactionRawData = string.Concat(block.Transactions.Select(t => t.ToRawString()));
+
+            var blockData = $"{block.Index}{block.TimeStamp}{transactionRawData}{block.PreviousHash}{block.Nonce}{block.DifficultyAtMining}";
             return ComputeHash(blockData);
         }
 

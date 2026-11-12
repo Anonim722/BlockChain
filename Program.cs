@@ -1,72 +1,96 @@
-﻿using BlockChain_1;
-using BlockChainP32;
+﻿using BlockChain_1.Service;
+using BlockChain_1;
+using BlockChain_1;
+using BlockChain_1.Models;
+using BlockChain_1.Service;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
-var miningService = new MiningService(new HashingService());
-int difficulty = 5;
-int threads = Environment.ProcessorCount;
+var blockChain = new BlockChain(4);
+var displayService = new BlockChainDisplayService();
+var transactionService = new TransactionService();
 
-//Однаковий тестовий блок для чесного порівняння
-Block CreateTestBlock() => new Block
+//Транзакції, що чекають на включення в блок
+var listTransaction = new List<Transaction>
 {
-    Index = 1,
-    TimeStamp = new DateTime(2026, 11, 9),
-    Data = "Test block",
-    PreviousHash = "0"
+    transactionService.CreateTransaction("Alice", "Bob", 10),
+    transactionService.CreateTransaction("Bob", "Charlie", 5),
+    transactionService.CreateTransaction("Charlie", "Dave", 2)
 };
 
-Console.WriteLine($"Складність: {difficulty}, потоків: {threads}");
-Console.WriteLine(new string('=', 50));
-
-//===== 1. Звичайний майнінг =====
-var block1 = CreateTestBlock();
-miningService.MineBlock(block1, difficulty);
-
-//===== 2. Багатопотоковий майнінг =====
-var block2 = CreateTestBlock();
-miningService.MineBlockParallel(block2, difficulty, threads);
-
-Console.WriteLine(new string('=', 50));
-Console.WriteLine($"Звичайний:      {block1.MiningDuration:F3} s (Nonce={block1.Nonce})");
-Console.WriteLine($"Багатопотоковий: {block2.MiningDuration:F3} s (Nonce={block2.Nonce})");
-Console.WriteLine($"Прискорення:    x{block1.MiningDuration / block2.MiningDuration:F2}");
-
-//===== 3. Асинхронність: програма "живе" під час майнінгу =====
-Console.WriteLine();
-Console.Write("Асинхронний майнінг");
-var block3 = CreateTestBlock();
-block3.Data = "Async block";
-
-var miningTask = miningService.MineBlockParallelAsync(block3, difficulty, threads);
-while (!miningTask.IsCompleted)
+while (true)
 {
-    Console.Write(".");          //головний потік вільний і працює
-    await Task.Delay(200);
+    Console.WriteLine();
+    Console.WriteLine($"Menu (в черзі транзакцій: {listTransaction.Count})");
+    Console.WriteLine("addTr | add | display | validate | history | find | exit");
+    Console.Write("> ");
+    var enter = Console.ReadLine();
+
+    if (enter == "exit")
+    {
+        break;
+    }
+
+    if (enter == "addTr")
+    {
+        Console.Write("From: ");
+        var from = Console.ReadLine() ?? "";
+        Console.Write("To: ");
+        var to = Console.ReadLine() ?? "";
+        Console.Write("Amount: ");
+        if (!decimal.TryParse(Console.ReadLine(), out var amount))
+        {
+            Console.WriteLine("Amount має бути числом.");
+            continue;
+        }
+
+        try
+        {
+            listTransaction.Add(transactionService.CreateTransaction(from, to, amount));
+            Console.WriteLine("Transaction added.");
+        }
+        catch (ArgumentException ex)
+        {
+            Console.WriteLine($"Помилка: {ex.Message}");
+        }
+    }
+    else if (enter == "add")
+    {
+        if (listTransaction.Count == 0)
+        {
+            Console.WriteLine("Немає транзакцій для блоку.");
+            continue;
+        }
+
+        await blockChain.AddBlockAsync(listTransaction);
+        listTransaction.Clear(); //безпечно: блок зберіг власну копію
+        Console.WriteLine("Block added.");
+    }
+    else if (enter == "display")
+    {
+        displayService.DisplayChain(blockChain);
+    }
+    else if (enter == "validate")
+    {
+        Console.WriteLine("Is Valid: " + blockChain.IsChainValid());
+    }
+    else if (enter == "history")
+    {
+        displayService.PrintDifficultyHistory(blockChain);
+    }
+    else if (enter == "find")
+    {
+        Console.Write("Ім'я учасника: ");
+        var name = Console.ReadLine() ?? "";
+        var found = blockChain.FindBlocksByParticipant(name);
+        Console.WriteLine($"Знайдено блоків: {found.Count}");
+        foreach (var block in found)
+        {
+            displayService.DisplayBlock(block);
+        }
+    }
+    else
+    {
+        Console.WriteLine("Unknown command. Please try again.");
+    }
 }
-await miningTask;
-
-Console.WriteLine();
-var blockChain = new BlockChain();
-var displayService = new BlockChainDisplayService();
-
-string[] authors = { "Alex", "Bob", "Charlie" };
-for (int i = 1; i <= 9; i++)
-{
-    await blockChain.AddBlockAsync($"Transaction #{i}", authors[i % authors.Length]);
-}
-
-Console.WriteLine();
-displayService.PrintDifficultyHistory(blockChain);
-
-//Перевіряємо, що складність дійсно змінювалась
-var levels = blockChain.Chain
-    .Where(b => b.Index > 0)
-    .Select(b => b.DifficultyAtMining)
-    .Distinct()
-    .ToList();
-
-Console.WriteLine();
-Console.WriteLine($"Рівні складності: {string.Join(" -> ", levels)}");
-Console.WriteLine(levels.Count > 1 ? "Складність змінювалась ✔" : "Складність НЕ змінювалась ✘");
-Console.WriteLine("Is Valid: " + blockChain.IsChainValid());

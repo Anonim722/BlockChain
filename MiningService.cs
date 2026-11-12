@@ -1,4 +1,4 @@
-﻿using BlockChainP32;
+﻿using BlockChain_1;
 using System;
 using System.Diagnostics;
 
@@ -68,8 +68,7 @@ namespace BlockChain_1
                     {
                         Index = block.Index,
                         TimeStamp = block.TimeStamp,
-                        Data = block.Data,
-                        Author = block.Author,
+                        Transactions = block.Transactions,
                         PreviousHash = block.PreviousHash,
                         Nonce = threadId,
                         DifficultyAtMining = block.DifficultyAtMining,

@@ -5,10 +5,10 @@ using System.Text;
 using System.Threading.Tasks;
 
 
-using System.Text;
-using BlockChain_1;
+using BlockChain_1.Models;
+using BlockChain_1.Service;
 
-namespace BlockChainP32
+namespace BlockChain_1
 {
     public class BlockChain
     {
@@ -18,16 +18,20 @@ namespace BlockChainP32
         private readonly int _adjustmentInterval = 3;      
         private readonly double _targetBlockTime = 1.0;
         private readonly MiningService _miningService;
+        //Сервіс для обробки транзакцій
+        private readonly TransactionService _transactionService;
 
         //Хешування сервіс для обчислення хешів
         private readonly HashingService _hashingService;
 
         //Конструктор класу BlockChain
-        public BlockChain()
+        public BlockChain(int difficulty = 4)
         {
             Chain = new List<Block>();
             _hashingService = new HashingService();
             _miningService = new MiningService(_hashingService);
+            _transactionService = new TransactionService();
+            Difficulty = difficulty;
             //Додаємо генезис-блок до ланцюжка
             AddGenesisBlock();
         }
@@ -39,8 +43,7 @@ namespace BlockChainP32
             {
                 Index = 0,
                 TimeStamp = DateTime.UtcNow,
-                Data = "",
-                Author = "System",
+                Transactions = new List<Transaction>(),
                 PreviousHash = "0",
                 DifficultyAtMining = 0
             };
@@ -50,22 +53,10 @@ namespace BlockChainP32
             Chain.Add(genesisBlock);
         }
 
-        public void AddBlock(string data, string author)
+        public void AddBlock(List<Transaction> transactions)
         {
-            var lastBlock = Chain[Chain.Count - 1];
-
-            var newBlock = new Block
-            {
-                Index = lastBlock.Index + 1,
-                TimeStamp = DateTime.UtcNow,
-                Data = data,
-                Author = author,
-                PreviousHash = lastBlock.Hash,
-                DifficultyAtMining = Difficulty
-            };
-
+            var newBlock = CreateNewBlock(transactions);
             _miningService.MineBlock(newBlock, Difficulty);
-
             Chain.Add(newBlock);
 
             if (newBlock.Index % _adjustmentInterval == 0)
@@ -74,26 +65,42 @@ namespace BlockChainP32
             }
         }
 
-        public async Task AddBlockAsync(string data, string author)
+        public async Task AddBlockAsync(List<Transaction> transactions)
         {
-            var lastBlock = Chain[Chain.Count - 1];
-            var newBlock = new Block
-            {
-                Index = lastBlock.Index + 1,
-                TimeStamp = DateTime.UtcNow,
-                Data = data,
-                Author = author,
-                PreviousHash = lastBlock.Hash
-        };
-
-            //Чекаємо майнінг, не блокуючи програму
+            var newBlock = CreateNewBlock(transactions);
             await _miningService.MineBlockParallelAsync(newBlock, Difficulty, Environment.ProcessorCount);
-
             Chain.Add(newBlock);
+
             if (newBlock.Index % _adjustmentInterval == 0)
             {
                 AdjustDifficulty();
             }
+        }
+        //Перевіряє транзакції і готує новий блок (ще без майнінгу)
+        private Block CreateNewBlock(List<Transaction> transactions)
+        {
+            foreach (var tx in transactions)
+            {
+                var result = _transactionService.ValidateTransaction(tx);
+                if (!result.isValid)
+                {
+                    Console.WriteLine($"Invalid transaction: {tx}");
+                    throw new ArgumentException($"{result.errorMessage}: {tx}");
+                }
+            }
+
+            //Копія списку — щоб зміни ззовні не зіпсували блок
+            var transactionCopy = new List<Transaction>(transactions);
+
+            var lastBlock = Chain[Chain.Count - 1];
+            return new Block
+            {
+                Index = lastBlock.Index + 1,
+                TimeStamp = DateTime.UtcNow,
+                Transactions = transactionCopy,          // ← копія, а не transactions!
+                PreviousHash = lastBlock.Hash,
+                DifficultyAtMining = Difficulty
+            };
         }
 
         public Block? FindBlockByIndex(int index)
@@ -101,13 +108,15 @@ namespace BlockChainP32
             return Chain.FirstOrDefault(block => block.Index == index);
         }
 
-        public List<Block> FindBlocksByData(string text)
+        //Блоки, де людина була відправником або отримувачем
+        public List<Block> FindBlocksByParticipant(string name)
         {
             return Chain
-                .Where(block => block.Data.Contains(text, StringComparison.OrdinalIgnoreCase))
+                .Where(block => block.Transactions.Any(tx =>
+                    tx.From.Equals(name, StringComparison.OrdinalIgnoreCase) ||
+                    tx.To.Equals(name, StringComparison.OrdinalIgnoreCase)))
                 .ToList();
         }
-
         public bool IsChainValid()
         {
 

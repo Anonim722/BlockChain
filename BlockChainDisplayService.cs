@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace BlockChainP32
+namespace BlockChain_1
 {
     public class BlockChainDisplayService
     {
@@ -22,8 +22,13 @@ namespace BlockChainP32
         {
             Console.WriteLine($"Index: {block.Index}");
             Console.WriteLine($"Timestamp: {block.TimeStamp}");
-            Console.WriteLine($"Data: {block.Data}");
-            Console.WriteLine($"Author: {block.Author}");
+            Console.WriteLine($"Nonce: {block.Nonce}");
+            Console.WriteLine($"Mining Duration: {block.MiningDuration} seconds");
+            Console.WriteLine($"Transactions ({block.Transactions.Count}):");
+            foreach (var tx in block.Transactions)
+            {
+                Console.WriteLine($"   - {tx.ToRawString()}");
+            }
             Console.WriteLine($"Previous Hash: {block.PreviousHash}");
             Console.WriteLine($"Hash: {block.Hash}");
             Console.WriteLine(new string('-', 50));
