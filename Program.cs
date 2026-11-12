@@ -1,86 +1,57 @@
-﻿using BlockChainP32;
+﻿using BlockChain_1;
+using BlockChainP32;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
+var miningService = new MiningService(new HashingService());
+int difficulty = 5;
+int threads = Environment.ProcessorCount;
 
-var blockChain = new BlockChain();
-var displayService = new BlockChainDisplayService();
-
-blockChain.AddBlock("Alex send 1 BTC to Bob", "Alex");
-blockChain.AddBlock("Bob send 0.5 BTC to Charlie", "Bob");
-blockChain.AddBlock("Charlie send 0.2 BTC to Dave", "Charlie");
-blockChain.AddBlock("Dave send 0.1 BTC to Eve", "Dave");
-blockChain.AddBlock("Eve send 0.05 BTC to Frank", "Eve");
-
-
-
-displayService.DisplayChain(blockChain);
-Console.WriteLine("Is Valid: " + blockChain.IsChainValid());
-
-blockChain.Chain[2].Data = "Bob send 100 BTC to Charlie";
-displayService.DisplayChain(blockChain);
-Console.WriteLine("Is Valid: " + blockChain.IsChainValid());
-
-
-while (true)
+//Однаковий тестовий блок для чесного порівняння
+Block CreateTestBlock() => new Block
 {
-    Console.WriteLine();
-    Console.WriteLine("1 - Пошук блоку за Index");
-    Console.WriteLine("2 - Пошук подій за текстом у Data");
-    Console.WriteLine("0 - Вихід");
-    Console.Write("Ваш вибір: ");
-    var choice = Console.ReadLine();
+    Index = 1,
+    TimeStamp = new DateTime(2026, 11, 9),
+    Data = "Test block",
+    PreviousHash = "0"
+};
 
-    if (choice == "0")
-    {
-        break;
-    }
+Console.WriteLine($"Складність: {difficulty}, потоків: {threads}");
+Console.WriteLine(new string('=', 50));
 
-    if (choice == "1")
-    {
-        Console.Write("Введіть Index: ");
-        if (!int.TryParse(Console.ReadLine(), out var index))
-        {
-            Console.WriteLine("Index має бути цілим числом.");
-            continue;
-        }
+//===== 1. Звичайний майнінг =====
+var block1 = CreateTestBlock();
+miningService.MineBlock(block1, difficulty);
 
-        var block = blockChain.FindBlockByIndex(index);
-        if (block == null)
-        {
-            Console.WriteLine($"Блок з Index {index} не знайдено.");
-        }
-        else
-        {
-            displayService.DisplayBlock(block);
-        }
-    }
-    else if (choice == "2")
-    {
-        Console.Write("Введіть текст для пошуку: ");
-        var text = Console.ReadLine() ?? "";
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            Console.WriteLine("Текст для пошуку не може бути порожнім.");
-            continue;
-        }
+//===== 2. Багатопотоковий майнінг =====
+var block2 = CreateTestBlock();
+miningService.MineBlockParallel(block2, difficulty, threads);
 
-        var found = blockChain.FindBlocksByData(text);
-        if (found.Count == 0)
-        {
-            Console.WriteLine($"Подій з текстом \"{text}\" не знайдено.");
-        }
-        else
-        {
-            Console.WriteLine($"Знайдено блоків: {found.Count}");
-            foreach (var block in found)
-            {
-                displayService.DisplayBlock(block);
-            }
-        }
-    }
-    else
-    {
-        Console.WriteLine("Невідома команда.");
-    }
+Console.WriteLine(new string('=', 50));
+Console.WriteLine($"Звичайний:      {block1.MiningDuration:F3} s (Nonce={block1.Nonce})");
+Console.WriteLine($"Багатопотоковий: {block2.MiningDuration:F3} s (Nonce={block2.Nonce})");
+Console.WriteLine($"Прискорення:    x{block1.MiningDuration / block2.MiningDuration:F2}");
+
+//===== 3. Асинхронність: програма "живе" під час майнінгу =====
+Console.WriteLine();
+Console.Write("Асинхронний майнінг");
+var block3 = CreateTestBlock();
+block3.Data = "Async block";
+
+var miningTask = miningService.MineBlockParallelAsync(block3, difficulty, threads);
+while (!miningTask.IsCompleted)
+{
+    Console.Write(".");          //головний потік вільний і працює
+    await Task.Delay(200);
 }
+await miningTask;
+
+//===== 4. Ланцюг з асинхронним додаванням =====
+Console.WriteLine();
+var blockChain = new BlockChain();
+await blockChain.AddBlockAsync("Alex send 1 BTC to Bob", "Alex");
+await blockChain.AddBlockAsync("Bob send 0.5 BTC to Charlie", "Bob");
+await blockChain.AddBlockAsync("Charlie send 0.2 BTC to Dave", "Charlie");
+
+new BlockChainDisplayService().DisplayChain(blockChain);
+Console.WriteLine("Is Valid: " + blockChain.IsChainValid());

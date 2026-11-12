@@ -11,7 +11,7 @@ namespace BlockChainP32
     {
         public string ComputeHash(Block block)
         {
-            var blockData = $"{block.Index}{block.TimeStamp}{block.Data}{block.Author}{block.PreviousHash}";
+            var blockData = $"{block.Index}{block.TimeStamp}{block.Data}{block.Author}{block.PreviousHash}{block.Nonce}";
             return ComputeHash(blockData);
         }
 

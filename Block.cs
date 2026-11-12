@@ -21,5 +21,11 @@ namespace BlockChainP32
         public string PreviousHash { get; set; }
         //Хеш поточного блоку
         public string Hash { get; set; }
+
+        //Число, яке підбирається для знаходження хешу (Proof of Work)
+        public int Nonce { get; set; }
+
+        //Скільки часу зайняв майнінг блоку (в секундах)
+        public double MiningDuration { get; set; }
     }
 }
