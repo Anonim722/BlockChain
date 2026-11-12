@@ -46,12 +46,27 @@ while (!miningTask.IsCompleted)
 }
 await miningTask;
 
-//===== 4. Ланцюг з асинхронним додаванням =====
 Console.WriteLine();
 var blockChain = new BlockChain();
-await blockChain.AddBlockAsync("Alex send 1 BTC to Bob", "Alex");
-await blockChain.AddBlockAsync("Bob send 0.5 BTC to Charlie", "Bob");
-await blockChain.AddBlockAsync("Charlie send 0.2 BTC to Dave", "Charlie");
+var displayService = new BlockChainDisplayService();
 
-new BlockChainDisplayService().DisplayChain(blockChain);
+string[] authors = { "Alex", "Bob", "Charlie" };
+for (int i = 1; i <= 9; i++)
+{
+    await blockChain.AddBlockAsync($"Transaction #{i}", authors[i % authors.Length]);
+}
+
+Console.WriteLine();
+displayService.PrintDifficultyHistory(blockChain);
+
+//Перевіряємо, що складність дійсно змінювалась
+var levels = blockChain.Chain
+    .Where(b => b.Index > 0)
+    .Select(b => b.DifficultyAtMining)
+    .Distinct()
+    .ToList();
+
+Console.WriteLine();
+Console.WriteLine($"Рівні складності: {string.Join(" -> ", levels)}");
+Console.WriteLine(levels.Count > 1 ? "Складність змінювалась ✔" : "Складність НЕ змінювалась ✘");
 Console.WriteLine("Is Valid: " + blockChain.IsChainValid());

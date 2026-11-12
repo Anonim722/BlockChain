@@ -28,5 +28,19 @@ namespace BlockChainP32
             Console.WriteLine($"Hash: {block.Hash}");
             Console.WriteLine(new string('-', 50));
         }
+        public void PrintDifficultyHistory(BlockChain blockChain)
+        {
+            Console.WriteLine("Історія складності:");
+            Console.WriteLine($"{"Index",-6} | {"Difficulty",-10} | {"Attempts",-12} | {"Duration (s)",-12} | Hash");
+            Console.WriteLine(new string('-', 80));
+
+            foreach (var block in blockChain.Chain)
+            {
+                Console.WriteLine(
+                    $"{block.Index,-6} | {block.DifficultyAtMining,-10} | {block.Attempts,-12} | " +
+                    $"{block.MiningDuration,-12:F3} | {block.Hash.Substring(0, 16)}...");
+            }
+        }
     }
 }
+

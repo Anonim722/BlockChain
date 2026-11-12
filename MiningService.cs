@@ -21,15 +21,18 @@ namespace BlockChain_1
             var stopwatch = Stopwatch.StartNew();
 
 
+            long attempts = 0;
             while (true)
             {
-                block.Hash = _hashingService.ComputeHash(block); 
+                block.Hash = _hashingService.ComputeHash(block);
+                attempts++;
 
                 if (block.Hash.Substring(0, difficulty) == target) 
                 {
                     stopwatch.Stop();
                     block.MiningDuration = stopwatch.Elapsed.TotalSeconds;
                     Console.WriteLine($"Hash found for block {block.Index}: {block.Hash}: {block.MiningDuration} seconds");
+                    block.Attempts = attempts;
                     break;
                 }
                 if (block.Nonce % 100000 == 0)
@@ -52,7 +55,8 @@ namespace BlockChain_1
 
             var locker = new object();
             bool found = false;
-            
+            long totalAttempts = 0;
+
             var tasks = new Task[threadCount];
 
             for ( int t = 0; t < threadCount; t++)
@@ -67,31 +71,42 @@ namespace BlockChain_1
                         Data = block.Data,
                         Author = block.Author,
                         PreviousHash = block.PreviousHash,
-                        Nonce = threadId
+                        Nonce = threadId,
+                        DifficultyAtMining = block.DifficultyAtMining,
                     };
-                    while (!token.IsCancellationRequested)
+                    long localAttempts = 0;
+                    try
                     {
-                        var hash = _hashingService.ComputeHash(candidate);
-
-                        if (hash.Substring(0, difficulty) == target)
+                        while (!token.IsCancellationRequested)
                         {
-                            lock (locker)
+                            var hash = _hashingService.ComputeHash(candidate);
+
+                            if (hash.Substring(0, difficulty) == target)
                             {
-                                if (!found)
+                                lock (locker)
                                 {
-                                    found = true;
-                                    block.Nonce = candidate.Nonce;
-                                    block.Hash = hash;
-                                    cts.Cancel();
+                                    if (!found)
+                                    {
+                                        found = true;
+                                        block.Nonce = candidate.Nonce;
+                                        block.Hash = hash;
+                                        cts.Cancel();
+                                    }
                                 }
+                                return;
                             }
-                            return;
+                            candidate.Nonce += threadCount;
                         }
-                        candidate.Nonce += threadCount;
+                    }
+                    finally
+                    {
+                        
+                        Interlocked.Add(ref totalAttempts, localAttempts);
                     }
                 });
             }
             Task.WaitAll(tasks);
+            block.Attempts = totalAttempts;
 
             stopwatch.Stop();
             block.MiningDuration = stopwatch.Elapsed.TotalSeconds;

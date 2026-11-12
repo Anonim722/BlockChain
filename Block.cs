@@ -27,5 +27,10 @@ namespace BlockChainP32
 
         //Скільки часу зайняв майнінг блоку (в секундах)
         public double MiningDuration { get; set; }
+
+        //Складність на момент створення блоку
+        public int DifficultyAtMining { get; set; }
+        //Кількість спроб (перебраних Nonce)
+        public long Attempts { get; set; }
     }
 }

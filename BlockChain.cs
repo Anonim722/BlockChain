@@ -14,9 +14,9 @@ namespace BlockChainP32
     {
         //Список блоків у ланцюжку
         public List<Block> Chain { get; set; }
-        public int Difficulty { get; set; } = 6;
-        private readonly int _adjustmentInterval = 5;
-        private readonly double _targetBlockTime = 2.0;
+        public int Difficulty { get; set; } = 4;
+        private readonly int _adjustmentInterval = 3;      
+        private readonly double _targetBlockTime = 1.0;
         private readonly MiningService _miningService;
 
         //Хешування сервіс для обчислення хешів
@@ -41,7 +41,8 @@ namespace BlockChainP32
                 TimeStamp = DateTime.UtcNow,
                 Data = "",
                 Author = "System",
-                PreviousHash = "0"
+                PreviousHash = "0",
+                DifficultyAtMining = 0
             };
             //Обчислюємо хеш генезис-блоку
             genesisBlock.Hash = _hashingService.ComputeHash(genesisBlock);
@@ -59,7 +60,8 @@ namespace BlockChainP32
                 TimeStamp = DateTime.UtcNow,
                 Data = data,
                 Author = author,
-                PreviousHash = lastBlock.Hash
+                PreviousHash = lastBlock.Hash,
+                DifficultyAtMining = Difficulty
             };
 
             _miningService.MineBlock(newBlock, Difficulty);
@@ -82,12 +84,16 @@ namespace BlockChainP32
                 Data = data,
                 Author = author,
                 PreviousHash = lastBlock.Hash
-            };
+        };
 
             //Чекаємо майнінг, не блокуючи програму
             await _miningService.MineBlockParallelAsync(newBlock, Difficulty, Environment.ProcessorCount);
 
             Chain.Add(newBlock);
+            if (newBlock.Index % _adjustmentInterval == 0)
+            {
+                AdjustDifficulty();
+            }
         }
 
         public Block? FindBlockByIndex(int index)
@@ -115,7 +121,8 @@ namespace BlockChainP32
                     return false;
                 }
 
-                if (currentBlock.PreviousHash != previousBlock.Hash)
+                var target = new string('0', currentBlock.DifficultyAtMining);
+                if (!currentBlock.Hash.StartsWith(target))
                 {
                     return false;
                 }
