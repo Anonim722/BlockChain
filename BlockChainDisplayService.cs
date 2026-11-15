@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using BlockChain_1.Models;
 
 namespace BlockChain_1
 {
@@ -45,6 +46,28 @@ namespace BlockChain_1
                     $"{block.Index,-6} | {block.DifficultyAtMining,-10} | {block.Attempts,-12} | " +
                     $"{block.MiningDuration,-12:F3} | {block.Hash.Substring(0, 16)}...");
             }
+        }
+
+        public void PrintValidationResult(BlockValidationResult r)
+        {
+            if (r.IsValid)
+            {
+                Console.WriteLine("✔ Ланцюг валідний, пошкоджень не знайдено.");
+                return;
+            }
+
+            Console.WriteLine($"✘ Перший пошкоджений блок: #{r.BlockIndex}");
+            Console.WriteLine($"  Причина: {r.Error}");
+            Console.WriteLine($"  {r.Message}");
+        }
+
+        public void PrintRepairResult(RepairResult r)
+        {
+            Console.WriteLine("Відновлення завершено:");
+            Console.WriteLine($"  Перемайнено блоків: {r.BlocksRemined}");
+            Console.WriteLine($"  Загальна кількість спроб: {r.TotalAttempts}");
+            Console.WriteLine($"  Витрачений час: {r.DurationSeconds:F3} с");
+            Console.WriteLine($"  IsValid: {r.IsValidAfter}");
         }
     }
 }

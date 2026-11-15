@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Diagnostics;
 
 
 using BlockChain_1.Models;
@@ -15,7 +16,8 @@ namespace BlockChain_1
         //Список блоків у ланцюжку
         public List<Block> Chain { get; set; }
         public int Difficulty { get; set; } = 4;
-        private readonly int _adjustmentInterval = 3;      
+        private readonly int _adjustmentInterval = 3;
+        private readonly bool _autoAdjust;
         private readonly double _targetBlockTime = 1.0;
         private readonly MiningService _miningService;
         //Сервіс для обробки транзакцій
@@ -25,7 +27,7 @@ namespace BlockChain_1
         private readonly HashingService _hashingService;
 
         //Конструктор класу BlockChain
-        public BlockChain(int difficulty = 4)
+        public BlockChain(int difficulty = 4, bool autoAdjust = true)
         {
             Chain = new List<Block>();
             _hashingService = new HashingService();
@@ -34,6 +36,7 @@ namespace BlockChain_1
             Difficulty = difficulty;
             //Додаємо генезис-блок до ланцюжка
             AddGenesisBlock();
+            _autoAdjust = autoAdjust;
         }
 
         private void AddGenesisBlock()
@@ -59,7 +62,7 @@ namespace BlockChain_1
             _miningService.MineBlock(newBlock, Difficulty);
             Chain.Add(newBlock);
 
-            if (newBlock.Index % _adjustmentInterval == 0)
+            if (_autoAdjust && newBlock.Index % _adjustmentInterval == 0)
             {
                 AdjustDifficulty();
             }
@@ -71,7 +74,7 @@ namespace BlockChain_1
             await _miningService.MineBlockParallelAsync(newBlock, Difficulty, Environment.ProcessorCount);
             Chain.Add(newBlock);
 
-            if (newBlock.Index % _adjustmentInterval == 0)
+            if (_autoAdjust && newBlock.Index % _adjustmentInterval == 0)
             {
                 AdjustDifficulty();
             }
@@ -117,32 +120,99 @@ namespace BlockChain_1
                     tx.To.Equals(name, StringComparison.OrdinalIgnoreCase)))
                 .ToList();
         }
+        //Знаходить перший пошкоджений блок і причину. Якщо все добре — IsValid = true
+        public BlockValidationResult FindFirstInvalidBlock()
+        {
+            for (int i = 0; i < Chain.Count; i++)
+            {
+                var block = Chain[i];
+
+                //1. Чи відповідає збережений Hash даним блоку
+                var recalculated = _hashingService.ComputeHash(block);
+                if (block.Hash != recalculated)
+                {
+                    return new BlockValidationResult
+                    {
+                        BlockIndex = block.Index,
+                        Error = ValidationError.InvalidHash,
+                        Message = $"Блок #{block.Index}: збережений Hash {Short(block.Hash)} " +
+                                  $"не відповідає обчисленому {Short(recalculated)} — дані змінено"
+                    };
+                }
+
+                //2. Чи не порушено зв'язок з попереднім блоком
+                if (i > 0 && block.PreviousHash != Chain[i - 1].Hash)
+                {
+                    return new BlockValidationResult
+                    {
+                        BlockIndex = block.Index,
+                        Error = ValidationError.BrokenPreviousHash,
+                        Message = $"Блок #{block.Index}: PreviousHash {Short(block.PreviousHash)} " +
+                                  $"не дорівнює Hash блоку #{Chain[i - 1].Index} ({Short(Chain[i - 1].Hash)})"
+                    };
+                }
+
+                //3. Proof of Work — за складністю, з якою блок майнили
+                var target = new string('0', block.DifficultyAtMining);
+                if (!block.Hash.StartsWith(target))
+                {
+                    return new BlockValidationResult
+                    {
+                        BlockIndex = block.Index,
+                        Error = ValidationError.InvalidProofOfWork,
+                        Message = $"Блок #{block.Index}: Hash {Short(block.Hash)} не починається " +
+                                  $"з {block.DifficultyAtMining} нулів — Proof of Work не виконано"
+                    };
+                }
+            }
+
+            return new BlockValidationResult(); //пошкоджень немає
+        }
+
+
+        //Перемайнює блок startIndex і всі наступні, відновлюючи PreviousHash
+        public RepairResult RepairChain(int startIndex)
+        {
+            if (startIndex < 1 || startIndex >= Chain.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(startIndex),
+                    $"startIndex має бути від 1 до {Chain.Count - 1}");
+            }
+
+            var result = new RepairResult();
+            var stopwatch = Stopwatch.StartNew();
+
+            for (int i = startIndex; i < Chain.Count; i++)
+            {
+                var block = Chain[i];
+
+                //Відновлюємо зв'язок: посилання на (вже новий) Hash попереднього
+                block.PreviousHash = Chain[i - 1].Hash;
+                block.Nonce = 0;
+
+                //Майнимо з ПОЧАТКОВОЮ складністю цього блоку
+                _miningService.MineBlockParallel(block, block.DifficultyAtMining, Environment.ProcessorCount);
+
+                result.BlocksRemined++;
+                result.TotalAttempts += block.Attempts;
+            }
+
+            stopwatch.Stop();
+            result.DurationSeconds = stopwatch.Elapsed.TotalSeconds;
+            result.IsValidAfter = IsChainValid();
+            return result;
+        }
+
+        //Валідність = немає жодного пошкодженого блоку
         public bool IsChainValid()
         {
+            return FindFirstInvalidBlock().IsValid;
+        }
 
-            for (int i = 1; i < Chain.Count; i++)
-            {
-                var currentBlock = Chain[i];
-                var previousBlock = Chain[i - 1];
-
-                if (currentBlock.Hash != _hashingService.ComputeHash(currentBlock))
-                {
-                    return false;
-                }
-
-                if (currentBlock.PreviousHash != previousBlock.Hash)
-                {
-                    return false;
-                }
-
-                var target = new string('0', currentBlock.DifficultyAtMining);
-                if (!currentBlock.Hash.StartsWith(target))
-                {
-                    return false;
-                }
-
-            }
-            return true;
+        //Скорочений хеш для повідомлень
+        private static string Short(string hash)
+        {
+            return hash.Length > 12 ? hash.Substring(0, 12) + "..." : hash;
         }
 
         private void AdjustDifficulty()
