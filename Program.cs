@@ -43,7 +43,7 @@ while (true)
 {
     Console.WriteLine();
     Console.WriteLine($"Menu (в черзі транзакцій: {listTransaction.Count})");
-    Console.WriteLine("addTr | add | display | validate | history | find | check | tamper | hide | remine | repair | experiment | exit");
+    Console.WriteLine("addTr | add | display | validate | history | find | check | tamper | hide | remine | repair | experiment | rejectTest | clearTr | exit");
     Console.Write("> ");
     var enter = Console.ReadLine();
 
@@ -83,9 +83,13 @@ while (true)
             continue;
         }
 
-        await blockChain.AddBlockAsync(listTransaction);
-        listTransaction.Clear(); //безпечно: блок зберіг власну копію
-        Console.WriteLine("Block added.");
+        var result = await blockChain.AddBlockAsync(listTransaction);
+        displayService.PrintBlockCreationResult(result);
+
+        if (result.Success)
+        {
+            listTransaction.Clear(); //очищаємо чергу тільки після успіху
+        }
     }
     else if (enter == "display")
     {
@@ -188,6 +192,59 @@ while (true)
         {
             Console.WriteLine($"{d,-10} | {r.BlocksRemined,-6} | {r.TotalAttempts,-12} | {r.DurationSeconds,-8:F3} | {r.IsValidAfter}");
         }
+    }
+    else if (enter == "clearTr")
+    {
+        listTransaction.Clear();
+        Console.WriteLine("Чергу очищено.");
+    }
+    else if (enter == "rejectTest")
+    {
+        var existingTx = blockChain.Chain[1].Transactions[0];                 //вже є в ланцюгу
+        var repeatedTx = transactionService.CreateTransaction("Alice", "Bob", 1);
+
+        var scenarios = new List<(string name, List<Transaction> txs)>
+    {
+        ("5 транзакцій, одна з від'ємною сумою", new List<Transaction>
+        {
+            transactionService.CreateTransaction("Alice", "Bob", 1),
+            transactionService.CreateTransaction("Bob", "Charlie", 2),
+            new Transaction("Eve", "Dave", -5),        //в обхід сервісу — неправильні дані
+            transactionService.CreateTransaction("Dave", "Alice", 3),
+            transactionService.CreateTransaction("Charlie", "Eve", 4)
+        }),
+        ("Повтор Id всередині блоку", new List<Transaction>
+        {
+            repeatedTx,
+            transactionService.CreateTransaction("Bob", "Eve", 2),
+            repeatedTx                                  //той самий об'єкт двічі
+        }),
+        ("Транзакція вже є в Blockchain", new List<Transaction>
+        {
+            transactionService.CreateTransaction("Eve", "Alice", 5),
+            existingTx
+        })
+    };
+
+        foreach (var (name, txs) in scenarios)
+        {
+            int blocksBefore = blockChain.Chain.Count;
+            int miningBefore = blockChain.MiningRunsCount;
+
+            Console.WriteLine($"\n=== {name} ({txs.Count} транзакцій) ===");
+            var result = blockChain.AddBlock(txs);
+            displayService.PrintBlockCreationResult(result);
+
+            bool blocksSame = blockChain.Chain.Count == blocksBefore;
+            bool miningSame = blockChain.MiningRunsCount == miningBefore;
+
+            Console.WriteLine($"Блоків: {blocksBefore} -> {blockChain.Chain.Count} " +
+                              (blocksSame ? "✔ не змінилось" : "✘ змінилось!"));
+            Console.WriteLine($"Запусків майнінгу: {miningBefore} -> {blockChain.MiningRunsCount} " +
+                              (miningSame ? "✔ майнінг не запускався" : "✘ майнінг запускався!"));
+        }
+
+        Console.WriteLine($"\nIs Valid: {blockChain.IsChainValid()}");
     }
     else
     {

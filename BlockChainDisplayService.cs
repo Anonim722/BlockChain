@@ -69,6 +69,21 @@ namespace BlockChain_1
             Console.WriteLine($"  Витрачений час: {r.DurationSeconds:F3} с");
             Console.WriteLine($"  IsValid: {r.IsValidAfter}");
         }
+
+        public void PrintBlockCreationResult(BlockCreationResult r)
+        {
+            if (r.Success)
+            {
+                Console.WriteLine($"✔ Блок #{r.Block!.Index} створено ({r.Block.Transactions.Count} транзакцій).");
+                return;
+            }
+
+            Console.WriteLine($"✘ Блок відхилено. Причин: {r.Errors.Count}");
+            foreach (var error in r.Errors)
+            {
+                Console.WriteLine($"  - {error}");
+            }
+        }
     }
 }
 

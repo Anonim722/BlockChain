@@ -16,6 +16,7 @@ namespace BlockChain_1
         //Список блоків у ланцюжку
         public List<Block> Chain { get; set; }
         public int Difficulty { get; set; } = 4;
+        public int MiningRunsCount { get; private set; }
         private readonly int _adjustmentInterval = 3;
         private readonly bool _autoAdjust;
         private readonly double _targetBlockTime = 1.0;
@@ -56,9 +57,20 @@ namespace BlockChain_1
             Chain.Add(genesisBlock);
         }
 
-        public void AddBlock(List<Transaction> transactions)
+        public BlockCreationResult AddBlock(List<Transaction> transactions)
         {
+            var result = new BlockCreationResult();
+
+            //1. Спочатку перевіряємо ВСЕ
+            result.Errors.AddRange(ValidateTransactionsForNewBlock(transactions));
+            if (!result.Success)
+            {
+                return result; //відмова: блок не створено, майнінг не запускався
+            }
+
+            //2. Тільки тепер — створення і майнінг
             var newBlock = CreateNewBlock(transactions);
+            MiningRunsCount++;
             _miningService.MineBlock(newBlock, Difficulty);
             Chain.Add(newBlock);
 
@@ -66,11 +78,23 @@ namespace BlockChain_1
             {
                 AdjustDifficulty();
             }
+
+            result.Block = newBlock;
+            return result;
         }
 
-        public async Task AddBlockAsync(List<Transaction> transactions)
+        public async Task<BlockCreationResult> AddBlockAsync(List<Transaction> transactions)
         {
+            var result = new BlockCreationResult();
+
+            result.Errors.AddRange(ValidateTransactionsForNewBlock(transactions));
+            if (!result.Success)
+            {
+                return result;
+            }
+
             var newBlock = CreateNewBlock(transactions);
+            MiningRunsCount++;
             await _miningService.MineBlockParallelAsync(newBlock, Difficulty, Environment.ProcessorCount);
             Chain.Add(newBlock);
 
@@ -78,21 +102,81 @@ namespace BlockChain_1
             {
                 AdjustDifficulty();
             }
+
+            result.Block = newBlock;
+            return result;
         }
-        //Перевіряє транзакції і готує новий блок (ще без майнінгу)
-        private Block CreateNewBlock(List<Transaction> transactions)
+
+        //Перевіряє ВЕСЬ список транзакцій нового блоку. Повертає всі знайдені проблеми
+        public List<string> ValidateTransactionsForNewBlock(List<Transaction> transactions)
         {
-            foreach (var tx in transactions)
+            var errors = new List<string>();
+
+            if (transactions == null || transactions.Count == 0)
             {
-                var result = _transactionService.ValidateTransaction(tx);
-                if (!result.isValid)
+                errors.Add("Список транзакцій порожній");
+                return errors;
+            }
+
+            //Id усіх транзакцій, які вже є в ланцюгу -> номер блоку
+            var existingIds = new Dictionary<string, int>();
+            foreach (var block in Chain)
+            {
+                foreach (var tx in block.Transactions)
                 {
-                    Console.WriteLine($"Invalid transaction: {tx}");
-                    throw new ArgumentException($"{result.errorMessage}: {tx}");
+                    existingIds.TryAdd(tx.Id, block.Index);
                 }
             }
 
-            //Копія списку — щоб зміни ззовні не зіпсували блок
+            //Id, які вже зустрілися в новому блоці
+            var seenIds = new HashSet<string>();
+
+            for (int i = 0; i < transactions.Count; i++)
+            {
+                var tx = transactions[i];
+
+                if (tx == null)
+                {
+                    errors.Add($"Транзакція #{i + 1}: відсутня (null)");
+                    continue;
+                }
+
+                var label = $"Транзакція #{i + 1} ({tx.From} -> {tx.To}: {tx.Amount})";
+
+                //1. Правильність даних
+                var (isValid, errorMessage) = _transactionService.ValidateTransaction(tx);
+                if (!isValid)
+                {
+                    errors.Add($"{label}: {errorMessage}");
+                }
+
+                //2. Id взагалі заданий
+                if (string.IsNullOrWhiteSpace(tx.Id))
+                {
+                    errors.Add($"{label}: порожній Id");
+                    continue; //далі перевіряти Id немає сенсу
+                }
+
+                //3. Повтор Id всередині нового блоку
+                if (!seenIds.Add(tx.Id))
+                {
+                    errors.Add($"{label}: Id {Short(tx.Id)} повторюється всередині нового блоку");
+                }
+
+                //4. Така транзакція вже є в Blockchain
+                if (existingIds.TryGetValue(tx.Id, out var blockIndex))
+                {
+                    errors.Add($"{label}: транзакція з Id {Short(tx.Id)} вже є в блоці #{blockIndex}");
+                }
+            }
+
+            return errors;
+        }
+
+        //Перевіряє транзакції і готує новий блок (ще без майнінгу)
+        //Готує новий блок (без перевірки і без майнінгу)
+        private Block CreateNewBlock(List<Transaction> transactions)
+        {
             var transactionCopy = new List<Transaction>(transactions);
 
             var lastBlock = Chain[Chain.Count - 1];
@@ -100,7 +184,7 @@ namespace BlockChain_1
             {
                 Index = lastBlock.Index + 1,
                 TimeStamp = DateTime.UtcNow,
-                Transactions = transactionCopy,          // ← копія, а не transactions!
+                Transactions = transactionCopy,
                 PreviousHash = lastBlock.Hash,
                 DifficultyAtMining = Difficulty
             };
