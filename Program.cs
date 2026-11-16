@@ -8,32 +8,48 @@ var blockChain = new BlockChain(4);
 var displayService = new BlockChainDisplayService();
 var transactionService = new TransactionService();
 
+var walletService = new WalletService();
+
+//Гаманці за іменем (без урахування регістру)
+var wallets = new Dictionary<string, Wallet>(StringComparer.OrdinalIgnoreCase);
+foreach (var name in new[] { "Alice", "Bob", "Charlie", "Dave", "Eve" })
+{
+    wallets[name] = walletService.CreateWallet(name);
+    Console.WriteLine($"{name,-8} адреса: {wallets[name].Address}");
+}
+
+//Підписана транзакція "з імені в ім'я"
+Transaction Tx(string from, string to, decimal amount)
+{
+    return transactionService.CreateTransaction(wallets[from], wallets[to].Address, amount);
+}
+
 var hashingService = new HashingService();   //"зловмиснику" алгоритм хешування відомий
 
 Console.WriteLine("Створюємо початковий ланцюг...");
 blockChain.AddBlock(new List<Transaction>
 {
-    transactionService.CreateTransaction("Alice", "Bob", 10),
-    transactionService.CreateTransaction("Bob", "Charlie", 5),
-    transactionService.CreateTransaction("Charlie", "Dave", 2)
+    Tx("Alice", "Bob", 10),
+    Tx("Bob", "Charlie", 5),
+    Tx("Charlie", "Dave", 2)
 });
 blockChain.AddBlock(new List<Transaction>
 {
-    transactionService.CreateTransaction("Dave", "Alice", 7),
-    transactionService.CreateTransaction("Eve", "Bob", 15),
-    transactionService.CreateTransaction("Alice", "Eve", 3.5m)
+    Tx("Dave", "Alice", 7),
+    Tx("Eve", "Bob", 15),
+    Tx("Alice", "Eve", 3.5m)
 });
 blockChain.AddBlock(new List<Transaction>
 {
-    transactionService.CreateTransaction("Bob", "Alice", 4),
-    transactionService.CreateTransaction("Charlie", "Eve", 12),
-    transactionService.CreateTransaction("Eve", "Dave", 1.25m)
+    Tx("Bob", "Alice", 4),
+    Tx("Charlie", "Eve", 12),
+    Tx("Eve", "Dave", 1.25m)
 });
 blockChain.AddBlock(new List<Transaction>
 {
-    transactionService.CreateTransaction("Alice", "Charlie", 20),
-    transactionService.CreateTransaction("Dave", "Bob", 6),
-    transactionService.CreateTransaction("Bob", "Eve", 9)
+    Tx("Alice", "Charlie", 20),
+    Tx("Dave", "Bob", 6),
+    Tx("Bob", "Eve", 9)
 });
 
 //Транзакції, що чекають на включення в блок
@@ -54,21 +70,29 @@ while (true)
 
     if (enter == "addTr")
     {
-        Console.Write("From: ");
-        var from = Console.ReadLine() ?? "";
-        Console.Write("To: ");
-        var to = Console.ReadLine() ?? "";
-        Console.Write("Amount: ");
+        Console.Write("Від (ім'я): ");
+        var fromName = Console.ReadLine() ?? "";
+        Console.Write("Кому (ім'я): ");
+        var toName = Console.ReadLine() ?? "";
+
+        if (!wallets.TryGetValue(fromName, out var fromWallet) ||
+            !wallets.TryGetValue(toName, out var toWallet))
+        {
+            Console.WriteLine($"Гаманець не знайдено. Доступні: {string.Join(", ", wallets.Keys)}");
+            continue;
+        }
+
+        Console.Write("Сума: ");
         if (!decimal.TryParse(Console.ReadLine(), out var amount))
         {
-            Console.WriteLine("Amount має бути числом.");
+            Console.WriteLine("Сума має бути числом.");
             continue;
         }
 
         try
         {
-            listTransaction.Add(transactionService.CreateTransaction(from, to, amount));
-            Console.WriteLine("Transaction added.");
+            listTransaction.Add(transactionService.CreateTransaction(fromWallet, toWallet.Address, amount));
+            Console.WriteLine("Транзакцію підписано і додано в чергу.");
         }
         catch (ArgumentException ex)
         {
@@ -107,7 +131,8 @@ while (true)
     {
         Console.Write("Ім'я учасника: ");
         var name = Console.ReadLine() ?? "";
-        var found = blockChain.FindBlocksByParticipant(name);
+        var address = wallets.TryGetValue(name, out var w) ? w.Address : name;
+        var found = blockChain.FindBlocksByParticipant(address);
         Console.WriteLine($"Знайдено блоків: {found.Count}");
         foreach (var block in found)
         {
@@ -177,7 +202,7 @@ while (true)
             {
                 await testChain.AddBlockAsync(new List<Transaction>
             {
-                transactionService.CreateTransaction("Alice", "Bob", b)
+                Tx("Alice", "Bob", b)
             });
             }
 
@@ -201,27 +226,27 @@ while (true)
     else if (enter == "rejectTest")
     {
         var existingTx = blockChain.Chain[1].Transactions[0];                 //вже є в ланцюгу
-        var repeatedTx = transactionService.CreateTransaction("Alice", "Bob", 1);
+        var repeatedTx = Tx("Alice", "Bob", 1);
 
         var scenarios = new List<(string name, List<Transaction> txs)>
     {
         ("5 транзакцій, одна з від'ємною сумою", new List<Transaction>
         {
-            transactionService.CreateTransaction("Alice", "Bob", 1),
-            transactionService.CreateTransaction("Bob", "Charlie", 2),
+            Tx("Alice", "Bob", 1),
+            Tx("Bob", "Charlie", 2),
             new Transaction("Eve", "Dave", -5),        //в обхід сервісу — неправильні дані
-            transactionService.CreateTransaction("Dave", "Alice", 3),
-            transactionService.CreateTransaction("Charlie", "Eve", 4)
+            Tx("Dave", "Alice", 3),
+            Tx("Charlie", "Eve", 4)
         }),
         ("Повтор Id всередині блоку", new List<Transaction>
         {
             repeatedTx,
-            transactionService.CreateTransaction("Bob", "Eve", 2),
+            Tx("Bob", "Eve", 2),
             repeatedTx                                  //той самий об'єкт двічі
         }),
         ("Транзакція вже є в Blockchain", new List<Transaction>
         {
-            transactionService.CreateTransaction("Eve", "Alice", 5),
+            Tx("Eve", "Alice", 5),
             existingTx
         })
     };
@@ -245,6 +270,44 @@ while (true)
         }
 
         Console.WriteLine($"\nIs Valid: {blockChain.IsChainValid()}");
+    }
+    else if (enter == "signTest")
+    {
+        //1. Суму змінили ПІСЛЯ підпису
+        var changed = Tx("Alice", "Bob", 5);
+        changed.Amount = 500;
+
+        //2. Eve підписує СВОЇМ ключем, але вказує адресу Alice
+        var stolen = new Transaction(wallets["Alice"].Address, wallets["Eve"].Address, 50);
+        stolen.SenderPublicKey = wallets["Eve"].PublicKey;
+        stolen.Signature = wallets["Eve"].Sign(stolen.GetDataToSign());
+
+        //3. Копія чужої транзакції з НОВИМ Id (спроба обійти перевірку повтору)
+        var original = blockChain.Chain[1].Transactions[0];
+        var replay = new Transaction(original.From, original.To, original.Amount); //Id новий
+        replay.TimeStamp = original.TimeStamp;
+        replay.SenderPublicKey = original.SenderPublicKey;
+        replay.Signature = original.Signature;                                     //чужий підпис
+
+        //4. Зовсім без підпису
+        var unsigned = new Transaction(wallets["Bob"].Address, wallets["Alice"].Address, 1);
+
+        var cases = new (string name, Transaction tx)[]
+        {
+        ("Сума змінена після підпису", changed),
+        ("Eve підписала від імені Alice", stolen),
+        ("Копія транзакції з новим Id", replay),
+        ("Без підпису", unsigned)
+        };
+
+        foreach (var (name, tx) in cases)
+        {
+            Console.WriteLine($"\n=== {name} ===");
+            displayService.PrintBlockCreationResult(blockChain.AddBlock(new List<Transaction> { tx }));
+        }
+
+        Console.WriteLine("\n=== Чесна транзакція Alice -> Bob ===");
+        displayService.PrintBlockCreationResult(blockChain.AddBlock(new List<Transaction> { Tx("Alice", "Bob", 1) }));
     }
     else
     {

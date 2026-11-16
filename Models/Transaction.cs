@@ -15,6 +15,12 @@ namespace BlockChain_1.Models
 
         public DateTime TimeStamp { get; set; }
 
+        //Публічний ключ відправника
+        public byte[] SenderPublicKey { get; set; } = Array.Empty<byte>();
+
+        //Підпис транзакції приватним ключем відправника
+        public byte[]? Signature { get; set; }
+
         public Transaction(string from, string to, decimal amount)
         {
             Id = Guid.NewGuid().ToString();
@@ -22,6 +28,13 @@ namespace BlockChain_1.Models
             To = to;
             Amount = amount;
             TimeStamp = DateTime.UtcNow;
+        }
+
+        //Дані, які підписує відправник
+        public byte[] GetDataToSign()
+        {
+            var data = $"{Id}\t{From}\t{To}\t{Amount}\t{TimeStamp:O}";
+            return Encoding.UTF8.GetBytes(data);
         }
 
         //Рядок для хешування — тільки дані, через табуляцію

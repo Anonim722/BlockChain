@@ -1,20 +1,20 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+﻿using System.Security.Cryptography;
 
 namespace BlockChain_1.Models
 {
-    internal class Wallet
+    public class Wallet
     {
-        // имя, адреса гаманця, публічний та приватний ключі
+        //Ім'я користувача
         public string Name { get; set; }
 
+        //Адреса гаманця (виробляється з публічного ключа)
         public string Address { get; set; }
 
+        //Публічний ключ — його можна показувати всім
         public byte[] PublicKey { get; set; }
 
-        public byte[] PrivateKey { get; set; }
+        //Приватний ключ — ніхто, крім гаманця, його не бачить
+        private byte[] PrivateKey { get; set; }
 
         public Wallet(string name, string address, byte[] publicKey, byte[] privateKey)
         {
@@ -24,12 +24,12 @@ namespace BlockChain_1.Models
             PrivateKey = privateKey;
         }
 
+        //Підписуємо дані приватним ключем
         public byte[] Sign(byte[] data)
         {
-            using var ecdsa = System.Security.Cryptography.ECDsa.Create();
+            using var ecdsa = ECDsa.Create();
             ecdsa.ImportECPrivateKey(PrivateKey, out _);
-            return ecdsa.SignData(data, System.Security.Cryptography.HashAlgorithmName.SHA256);
+            return ecdsa.SignData(data, HashAlgorithmName.SHA256);
         }
-
     }
 }
