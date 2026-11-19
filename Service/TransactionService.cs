@@ -24,6 +24,16 @@ namespace BlockChain_1.Service
 
         public (bool isValid, string errorMessage) ValidateTransaction(Transaction tx)
         {
+            
+            if (tx.IsCoinbase)
+            {
+                if (tx.From != "Coinbase" || string.IsNullOrEmpty(tx.To) || tx.Amount <= 0)
+                {
+                    return (false, "Invalid coinbase transaction");
+                }
+                return (true, string.Empty);
+            }
+
             if (string.IsNullOrEmpty(tx.From))
             {
                 return (false, "Invalid sender address");

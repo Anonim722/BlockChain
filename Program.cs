@@ -34,31 +34,37 @@ Transaction Tx(string from, string to, decimal amount)
 
 var hashingService = new HashingService();   //"зловмиснику" алгоритм хешування відомий
 
-Console.WriteLine("Створюємо початковий ланцюг...");
+//Кожен гаманець майнить по блоку і отримує нагороду — це його стартові кошти
+Console.WriteLine("Початкові кошти: кожен гаманець майнить блок...");
+foreach (var w in walletManager.GetAll())
+{
+    blockChain.AddBlock(new List<Transaction>(), w.Address);
+}
+
 blockChain.AddBlock(new List<Transaction>
 {
     Tx("Alice", "Bob", 10),
     Tx("Bob", "Charlie", 5),
     Tx("Charlie", "Dave", 2)
-});
+}, GetWallet("Alice").Address);
 blockChain.AddBlock(new List<Transaction>
 {
     Tx("Dave", "Alice", 7),
     Tx("Eve", "Bob", 15),
     Tx("Alice", "Eve", 3.5m)
-});
+}, GetWallet("Bob").Address);
 blockChain.AddBlock(new List<Transaction>
 {
     Tx("Bob", "Alice", 4),
     Tx("Charlie", "Eve", 12),
     Tx("Eve", "Dave", 1.25m)
-});
+}, GetWallet("Charlie").Address);
 blockChain.AddBlock(new List<Transaction>
 {
     Tx("Alice", "Charlie", 20),
     Tx("Dave", "Bob", 6),
     Tx("Bob", "Eve", 9)
-});
+}, GetWallet("Dave").Address);
 
 //Транзакції, що чекають на включення в блок
 var listTransaction = new List<Transaction>();
@@ -67,7 +73,7 @@ while (true)
 {
     Console.WriteLine();
     Console.WriteLine($"Menu (в черзі транзакцій: {listTransaction.Count})");
-    Console.WriteLine("addTr | add | display | validate | history | find | check | tamper | hide | remine | repair | experiment | rejectTest | signTest | clearTr | newWallet | wallets | findWallet | exit");
+    Console.WriteLine("addTr | add | display | validate | history | find | check | tamper | hide | remine | repair | experiment | rejectTest | signTest | clearTr | newWallet | wallets | findWallet | balance | balances | coinbaseTest | exit");
     Console.Write("> ");
     var enter = Console.ReadLine();
 
@@ -99,6 +105,13 @@ while (true)
             continue;
         }
 
+        if (!blockChain.HasSufficientBalance(fromWallet.Address, amount, listTransaction))
+        {
+            Console.WriteLine($"✘ Недостатньо коштів. Баланс {fromWallet.Name}: {blockChain.GetBalance(fromWallet.Address)}" +
+                              " (частина може бути вже зарезервована в черзі)");
+            continue;
+        }
+
         try
         {
             listTransaction.Add(transactionService.CreateTransaction(fromWallet, toWallet.Address, amount));
@@ -111,18 +124,21 @@ while (true)
     }
     else if (enter == "add")
     {
-        if (listTransaction.Count == 0)
+        Console.Write("Хто майнить (ім'я): ");
+        var miner = walletManager.FindByName(Console.ReadLine() ?? "");
+        if (miner == null)
         {
-            Console.WriteLine("Немає транзакцій для блоку.");
+            Console.WriteLine("Гаманець майнера не знайдено.");
             continue;
         }
 
-        var result = await blockChain.AddBlockAsync(listTransaction);
+        var result = await blockChain.AddBlockAsync(listTransaction, miner.Address);
         displayService.PrintBlockCreationResult(result);
 
         if (result.Success)
         {
-            listTransaction.Clear(); //очищаємо чергу тільки після успіху
+            listTransaction.Clear();
+            Console.WriteLine($"{miner.Name} отримав нагороду {BlockChain.MiningReward}");
         }
     }
     else if (enter == "display")
@@ -213,7 +229,7 @@ while (true)
                 await testChain.AddBlockAsync(new List<Transaction>
             {
                 Tx("Alice", "Bob", b)
-            });
+            }, GetWallet("Dave").Address);
             }
 
             testChain.Chain[1].Transactions[0].Amount = 1000; //підробка в блоці 1
@@ -267,7 +283,7 @@ while (true)
             int miningBefore = blockChain.MiningRunsCount;
 
             Console.WriteLine($"\n=== {name} ({txs.Count} транзакцій) ===");
-            var result = blockChain.AddBlock(txs);
+            var result = blockChain.AddBlock(txs, GetWallet("Alice").Address);
             displayService.PrintBlockCreationResult(result);
 
             bool blocksSame = blockChain.Chain.Count == blocksBefore;
@@ -313,11 +329,11 @@ while (true)
         foreach (var (name, tx) in cases)
         {
             Console.WriteLine($"\n=== {name} ===");
-            displayService.PrintBlockCreationResult(blockChain.AddBlock(new List<Transaction> { tx }));
+            displayService.PrintBlockCreationResult(blockChain.AddBlock(new List<Transaction> { tx }, GetWallet("Alice").Address));
         }
 
         Console.WriteLine("\n=== Чесна транзакція Alice -> Bob ===");
-        displayService.PrintBlockCreationResult(blockChain.AddBlock(new List<Transaction> { Tx("Alice", "Bob", 1) }));
+        displayService.PrintBlockCreationResult(blockChain.AddBlock(new List<Transaction> { Tx("Alice", "Bob", 1) }, GetWallet("Dave").Address));
     }
     else if (enter == "newWallet")
     {
@@ -359,6 +375,35 @@ while (true)
         {
             walletDisplay.PrintWallets(byAddress);
         }
+    }
+    else if (enter == "balance")
+    {
+        Console.Write("Ім'я: ");
+        var w = walletManager.FindByName(Console.ReadLine() ?? "");
+        if (w == null)
+        {
+            Console.WriteLine("Гаманець не знайдено.");
+            continue;
+        }
+        Console.WriteLine($"Баланс {w.Name}: {blockChain.GetBalance(w.Address)}");
+    }
+    else if (enter == "balances")
+    {
+        decimal total = 0;
+        foreach (var w in walletManager.GetAll())
+        {
+            var b = blockChain.GetBalance(w.Address);
+            total += b;
+            Console.WriteLine($"{w.Name,-10} {b,10}");
+        }
+        Console.WriteLine($"{"Разом",-10} {total,10}");
+    }
+    else if (enter == "coinbaseTest")
+    {
+        var fake = new Transaction("Coinbase", GetWallet("Eve").Address, 1_000_000) { IsCoinbase = true };
+        var r = blockChain.AddBlock(new List<Transaction> { fake }, GetWallet("Eve").Address);
+        displayService.PrintBlockCreationResult(r);
+        Console.WriteLine($"Баланс Eve: {blockChain.GetBalance(GetWallet("Eve").Address)}");
     }
     else
     {

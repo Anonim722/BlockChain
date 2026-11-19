@@ -21,6 +21,11 @@ namespace BlockChain_1
         private readonly bool _autoAdjust;
         private readonly double _targetBlockTime = 1.0;
         private readonly MiningService _miningService;
+        //Нагорода за знайдений блок
+        public const decimal MiningReward = 50m;
+
+        //Сервіс для підрахунку балансів
+        private readonly BalanceService _balanceService;
         //Сервіс для обробки транзакцій
         private readonly TransactionService _transactionService;
 
@@ -38,6 +43,7 @@ namespace BlockChain_1
             //Додаємо генезис-блок до ланцюжка
             AddGenesisBlock();
             _autoAdjust = autoAdjust;
+            _balanceService = new BalanceService();
         }
 
         private void AddGenesisBlock()
@@ -57,19 +63,23 @@ namespace BlockChain_1
             Chain.Add(genesisBlock);
         }
 
-        public BlockCreationResult AddBlock(List<Transaction> transactions)
+        public BlockCreationResult AddBlock(List<Transaction> transactions, string minerAddress)
         {
             var result = new BlockCreationResult();
 
-            //1. Спочатку перевіряємо ВСЕ
+            if (string.IsNullOrWhiteSpace(minerAddress))
+            {
+                result.Errors.Add("Не вказано адресу майнера");
+                return result;
+            }
+
             result.Errors.AddRange(ValidateTransactionsForNewBlock(transactions));
             if (!result.Success)
             {
-                return result; //відмова: блок не створено, майнінг не запускався
+                return result;
             }
 
-            //2. Тільки тепер — створення і майнінг
-            var newBlock = CreateNewBlock(transactions);
+            var newBlock = CreateNewBlock(transactions, minerAddress);
             MiningRunsCount++;
             _miningService.MineBlock(newBlock, Difficulty);
             Chain.Add(newBlock);
@@ -83,7 +93,7 @@ namespace BlockChain_1
             return result;
         }
 
-        public async Task<BlockCreationResult> AddBlockAsync(List<Transaction> transactions)
+        public async Task<BlockCreationResult> AddBlockAsync(List<Transaction> transactions, string minerAddress)
         {
             var result = new BlockCreationResult();
 
@@ -93,7 +103,7 @@ namespace BlockChain_1
                 return result;
             }
 
-            var newBlock = CreateNewBlock(transactions);
+            var newBlock = CreateNewBlock(transactions, minerAddress);
             MiningRunsCount++;
             await _miningService.MineBlockParallelAsync(newBlock, Difficulty, Environment.ProcessorCount);
             Chain.Add(newBlock);
@@ -112,11 +122,12 @@ namespace BlockChain_1
         {
             var errors = new List<string>();
 
-            if (transactions == null || transactions.Count == 0)
+            if (transactions == null)
             {
-                errors.Add("Список транзакцій порожній");
+                errors.Add("Список транзакцій відсутній");
                 return errors;
             }
+            //Порожній список — це нормально: у блоці буде лише нагорода майнеру
 
             //Id усіх транзакцій, які вже є в ланцюгу -> номер блоку
             var existingIds = new Dictionary<string, int>();
@@ -130,6 +141,8 @@ namespace BlockChain_1
 
             //Id, які вже зустрілися в новому блоці
             var seenIds = new HashSet<string>();
+            //Скільки кожен відправник уже витратив у цьому новому блоці
+            var spentInBlock = new Dictionary<string, decimal>();
 
             for (int i = 0; i < transactions.Count; i++)
             {
@@ -142,6 +155,13 @@ namespace BlockChain_1
                 }
 
                 var label = $"Транзакція #{i + 1} ({tx.From} -> {tx.To}: {tx.Amount})";
+
+                //Coinbase додає тільки сам ланцюг
+                if (tx.IsCoinbase)
+                {
+                    errors.Add($"{label}: coinbase-транзакцію не можна додавати вручну");
+                    continue;
+                }
 
                 //1. Правильність даних
                 var (isValid, errorMessage) = _transactionService.ValidateTransaction(tx);
@@ -168,6 +188,22 @@ namespace BlockChain_1
                 {
                     errors.Add($"{label}: транзакція з Id {Short(tx.Id)} вже є в блоці #{blockIndex}");
                 }
+
+                //Баланс — тільки якщо дані транзакції правильні
+                if (isValid)
+                {
+                    var alreadySpent = spentInBlock.GetValueOrDefault(tx.From);
+                    var available = _balanceService.GetBalance(tx.From, Chain) - alreadySpent;
+
+                    if (tx.Amount > available)
+                    {
+                        errors.Add($"{label}: недостатньо коштів (доступно {available}, потрібно {tx.Amount})");
+                    }
+                    else
+                    {
+                        spentInBlock[tx.From] = alreadySpent + tx.Amount;
+                    }
+                }
             }
 
             return errors;
@@ -175,9 +211,13 @@ namespace BlockChain_1
 
         //Перевіряє транзакції і готує новий блок (ще без майнінгу)
         //Готує новий блок (без перевірки і без майнінгу)
-        private Block CreateNewBlock(List<Transaction> transactions)
+        private Block CreateNewBlock(List<Transaction> transactions, string minerAddress)
         {
             var transactionCopy = new List<Transaction>(transactions);
+
+            //Нагорода майнеру — завжди перша транзакція блоку
+            var coinbase = Transaction.CreateCoinbaseTransaction(minerAddress, MiningReward);
+            transactionCopy.Insert(0, coinbase);
 
             var lastBlock = Chain[Chain.Count - 1];
             return new Block
@@ -189,10 +229,21 @@ namespace BlockChain_1
                 DifficultyAtMining = Difficulty
             };
         }
-
         public Block? FindBlockByIndex(int index)
         {
             return Chain.FirstOrDefault(block => block.Index == index);
+        }
+
+        //Баланс адреси за поточним ланцюгом
+        public decimal GetBalance(string address)
+        {
+            return _balanceService.GetBalance(address, Chain);
+        }
+
+        //Чи вистачить коштів з урахуванням черги
+        public bool HasSufficientBalance(string address, decimal amount, List<Transaction> pending)
+        {
+            return _balanceService.HasSufficientBalance(address, amount, Chain, pending);
         }
 
         //Блоки, де людина була відправником або отримувачем

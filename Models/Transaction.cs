@@ -21,6 +21,9 @@ namespace BlockChain_1.Models
         //Підпис транзакції приватним ключем відправника
         public byte[]? Signature { get; set; }
 
+        //Чи є транзакція coinbase (нагорода за майнінг блоку)
+        public bool IsCoinbase { get; set; }
+
         public Transaction(string from, string to, decimal amount)
         {
             Id = Guid.NewGuid().ToString();
@@ -28,6 +31,12 @@ namespace BlockChain_1.Models
             To = to;
             Amount = amount;
             TimeStamp = DateTime.UtcNow;
+        }
+
+        //Створення coinbase-транзакції (нагорода майнеру)
+        public static Transaction CreateCoinbaseTransaction(string to, decimal amount)
+        {
+            return new Transaction("Coinbase", to, amount) { IsCoinbase = true };
         }
 
         //Дані, які підписує відправник
