@@ -9,6 +9,27 @@ var displayService = new BlockChainDisplayService();
 var transactionService = new TransactionService();
 
 var walletService = new WalletService();
+var walletManager = new WalletManager();
+var walletDisplay = new WalletDisplayService();
+
+foreach (var name in new[] { "Alice", "Bob", "Charlie", "Dave", "Eve" })
+{
+    walletManager.CreateWallet(name);
+}
+
+//Гаманець за ім'ям або зрозуміла помилка
+Wallet GetWallet(string name)
+{
+    return walletManager.FindByName(name)
+        ?? throw new ArgumentException($"Гаманець \"{name}\" не знайдено");
+}
+
+//Підписана транзакція "з імені в ім'я"
+Transaction Tx(string from, string to, decimal amount)
+{
+    return transactionService.CreateTransaction(GetWallet(from), GetWallet(to).Address, amount);
+}
+
 
 //Гаманці за іменем (без урахування регістру)
 var wallets = new Dictionary<string, Wallet>(StringComparer.OrdinalIgnoreCase);
@@ -18,11 +39,6 @@ foreach (var name in new[] { "Alice", "Bob", "Charlie", "Dave", "Eve" })
     Console.WriteLine($"{name,-8} адреса: {wallets[name].Address}");
 }
 
-//Підписана транзакція "з імені в ім'я"
-Transaction Tx(string from, string to, decimal amount)
-{
-    return transactionService.CreateTransaction(wallets[from], wallets[to].Address, amount);
-}
 
 var hashingService = new HashingService();   //"зловмиснику" алгоритм хешування відомий
 
