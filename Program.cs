@@ -31,14 +31,6 @@ Transaction Tx(string from, string to, decimal amount)
 }
 
 
-//Гаманці за іменем (без урахування регістру)
-var wallets = new Dictionary<string, Wallet>(StringComparer.OrdinalIgnoreCase);
-foreach (var name in new[] { "Alice", "Bob", "Charlie", "Dave", "Eve" })
-{
-    wallets[name] = walletService.CreateWallet(name);
-    Console.WriteLine($"{name,-8} адреса: {wallets[name].Address}");
-}
-
 
 var hashingService = new HashingService();   //"зловмиснику" алгоритм хешування відомий
 
@@ -75,7 +67,7 @@ while (true)
 {
     Console.WriteLine();
     Console.WriteLine($"Menu (в черзі транзакцій: {listTransaction.Count})");
-    Console.WriteLine("addTr | add | display | validate | history | find | check | tamper | hide | remine | repair | experiment | rejectTest | clearTr | exit");
+    Console.WriteLine("addTr | add | display | validate | history | find | check | tamper | hide | remine | repair | experiment | rejectTest | signTest | clearTr | newWallet | wallets | findWallet | exit");
     Console.Write("> ");
     var enter = Console.ReadLine();
 
@@ -91,10 +83,12 @@ while (true)
         Console.Write("Кому (ім'я): ");
         var toName = Console.ReadLine() ?? "";
 
-        if (!wallets.TryGetValue(fromName, out var fromWallet) ||
-            !wallets.TryGetValue(toName, out var toWallet))
+        var fromWallet = walletManager.FindByName(fromName);
+        var toWallet = walletManager.FindByName(toName);
+
+        if (fromWallet == null || toWallet == null)
         {
-            Console.WriteLine($"Гаманець не знайдено. Доступні: {string.Join(", ", wallets.Keys)}");
+            Console.WriteLine($"Гаманець не знайдено. Доступні: {string.Join(", ", walletManager.GetAll().Select(x => x.Name))}");
             continue;
         }
 
@@ -147,7 +141,7 @@ while (true)
     {
         Console.Write("Ім'я учасника: ");
         var name = Console.ReadLine() ?? "";
-        var address = wallets.TryGetValue(name, out var w) ? w.Address : name;
+        var address = walletManager.FindByName(name)?.Address ?? name;
         var found = blockChain.FindBlocksByParticipant(address);
         Console.WriteLine($"Знайдено блоків: {found.Count}");
         foreach (var block in found)
@@ -294,9 +288,9 @@ while (true)
         changed.Amount = 500;
 
         //2. Eve підписує СВОЇМ ключем, але вказує адресу Alice
-        var stolen = new Transaction(wallets["Alice"].Address, wallets["Eve"].Address, 50);
-        stolen.SenderPublicKey = wallets["Eve"].PublicKey;
-        stolen.Signature = wallets["Eve"].Sign(stolen.GetDataToSign());
+        var stolen = new Transaction(GetWallet("Alice").Address, GetWallet("Eve").Address, 50);
+        stolen.SenderPublicKey = GetWallet("Eve").PublicKey;
+        stolen.Signature = GetWallet("Eve").Sign(stolen.GetDataToSign());
 
         //3. Копія чужої транзакції з НОВИМ Id (спроба обійти перевірку повтору)
         var original = blockChain.Chain[1].Transactions[0];
@@ -306,7 +300,7 @@ while (true)
         replay.Signature = original.Signature;                                     //чужий підпис
 
         //4. Зовсім без підпису
-        var unsigned = new Transaction(wallets["Bob"].Address, wallets["Alice"].Address, 1);
+        var unsigned = new Transaction(GetWallet("Bob").Address, GetWallet("Alice").Address, 1);
 
         var cases = new (string name, Transaction tx)[]
         {
@@ -324,6 +318,47 @@ while (true)
 
         Console.WriteLine("\n=== Чесна транзакція Alice -> Bob ===");
         displayService.PrintBlockCreationResult(blockChain.AddBlock(new List<Transaction> { Tx("Alice", "Bob", 1) }));
+    }
+    else if (enter == "newWallet")
+    {
+        Console.Write("Ім'я нового гаманця: ");
+        var (wallet, error) = walletManager.CreateWallet(Console.ReadLine() ?? "");
+
+        if (wallet == null)
+        {
+            Console.WriteLine($"✘ {error}");
+        }
+        else
+        {
+            Console.WriteLine("✔ Гаманець створено:");
+            walletDisplay.PrintWallet(wallet);
+        }
+    }
+    else if (enter == "wallets")
+    {
+        walletDisplay.PrintWallets(walletManager.GetAll());
+    }
+    else if (enter == "findWallet")
+    {
+        Console.Write("Ім'я або адреса (від 4 символів): ");
+        var query = (Console.ReadLine() ?? "").Trim();
+
+        var byName = walletManager.FindByName(query);
+        if (byName != null)
+        {
+            walletDisplay.PrintWallet(byName);
+            continue;
+        }
+
+        var byAddress = walletManager.FindByAddress(query);
+        if (byAddress.Count == 0)
+        {
+            Console.WriteLine($"Гаманець \"{query}\" не знайдено.");
+        }
+        else
+        {
+            walletDisplay.PrintWallets(byAddress);
+        }
     }
     else
     {
