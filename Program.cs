@@ -57,7 +57,7 @@ blockChain.AddBlock(new List<Transaction>
 {
     Tx("Bob", "Alice", 4),
     Tx("Charlie", "Eve", 12),
-    Tx("Eve", "Dave", 1.25m)
+    Tx("Eve", "Dave", 1.25m) 
 }, GetWallet("Charlie").Address);
 blockChain.AddBlock(new List<Transaction>
 {
@@ -66,14 +66,13 @@ blockChain.AddBlock(new List<Transaction>
     Tx("Bob", "Eve", 9)
 }, GetWallet("Dave").Address);
 
-//Транзакції, що чекають на включення в блок
-var listTransaction = new List<Transaction>();
+
 
 while (true)
 {
     Console.WriteLine();
-    Console.WriteLine($"Menu (в черзі транзакцій: {listTransaction.Count})");
-    Console.WriteLine("addTr | add | display | validate | history | find | check | tamper | hide | remine | repair | experiment | rejectTest | signTest | clearTr | newWallet | wallets | findWallet | balance | balances | coinbaseTest | exit");
+    Console.WriteLine($"Menu (у mempool: {blockChain.PendingTransactions.Count})");
+    Console.WriteLine("addTr | add | display | validate | history | find | check | tamper | hide | remine | repair | experiment | rejectTest | signTest | clearTr | newWallet | wallets | findWallet | balance | balances | coinbaseTest | mempool | mempoolTest | exit");
     Console.Write("> ");
     var enter = Console.ReadLine();
 
@@ -105,18 +104,14 @@ while (true)
             continue;
         }
 
-        if (!blockChain.HasSufficientBalance(fromWallet.Address, amount, listTransaction))
-        {
-            Console.WriteLine($"✘ Недостатньо коштів. Баланс {fromWallet.Name}: {blockChain.GetBalance(fromWallet.Address)}" +
-                              " (частина може бути вже зарезервована в черзі)");
-            continue;
-        }
 
         try
         {
-            listTransaction.Add(transactionService.CreateTransaction(fromWallet, toWallet.Address, amount));
-            Console.WriteLine("Транзакцію підписано і додано в чергу.");
+            var tx = transactionService.CreateTransaction(fromWallet, toWallet.Address, amount);
+            var (ok, message) = blockChain.AddTransaction(tx);
+            Console.WriteLine(ok ? $"✔ {message}" : $"✘ {message}");
         }
+
         catch (ArgumentException ex)
         {
             Console.WriteLine($"Помилка: {ex.Message}");
@@ -132,13 +127,13 @@ while (true)
             continue;
         }
 
-        var result = await blockChain.AddBlockAsync(listTransaction, miner.Address);
+        var result = await blockChain.MinePendingAsync(miner.Address);
         displayService.PrintBlockCreationResult(result);
 
         if (result.Success)
         {
-            listTransaction.Clear();
-            Console.WriteLine($"{miner.Name} отримав нагороду {BlockChain.MiningReward}");
+            Console.WriteLine($"{miner.Name} отримав нагороду {BlockChain.MiningReward}. " +
+                              $"У mempool лишилось: {blockChain.PendingTransactions.Count}");
         }
     }
     else if (enter == "display")
@@ -246,8 +241,8 @@ while (true)
     }
     else if (enter == "clearTr")
     {
-        listTransaction.Clear();
-        Console.WriteLine("Чергу очищено.");
+        blockChain.ClearMempool();
+        Console.WriteLine("Mempool очищено.");
     }
     else if (enter == "rejectTest")
     {
@@ -404,6 +399,36 @@ while (true)
         var r = blockChain.AddBlock(new List<Transaction> { fake }, GetWallet("Eve").Address);
         displayService.PrintBlockCreationResult(r);
         Console.WriteLine($"Баланс Eve: {blockChain.GetBalance(GetWallet("Eve").Address)}");
+    }
+    else if (enter == "mempool")
+    {
+        displayService.DisplayMempool(blockChain.PendingTransactions, blockChain.MaxTransactionsPerBlock);
+    }
+    else if (enter == "mempoolTest")
+    {
+        //1. П'ять транзакцій — у блок піде тільки 3
+        foreach (var (from, to, sum) in new[] { ("Alice", "Bob", 1m), ("Bob", "Charlie", 2m),
+             ("Charlie", "Dave", 3m), ("Dave", "Eve", 4m), ("Eve", "Alice", 5m) })
+        {
+            var (ok, msg) = blockChain.AddTransaction(Tx(from, to, sum));
+            Console.WriteLine($"{from} -> {to}: {sum}  {(ok ? "✔" : "✘")} {msg}");
+        }
+        displayService.DisplayMempool(blockChain.PendingTransactions, blockChain.MaxTransactionsPerBlock);
+
+        var mineResult = await blockChain.MinePendingAsync(GetWallet("Alice").Address);
+        displayService.PrintBlockCreationResult(mineResult);
+        Console.WriteLine($"Після майнінгу у mempool: {blockChain.PendingTransactions.Count}");
+
+        //2. Подвійна витрата через mempool
+        var bob = GetWallet("Bob");
+        var half = Math.Floor(blockChain.GetBalance(bob.Address) / 2) + 1;   //трохи більше половини
+        Console.WriteLine($"\nБаланс Bob: {blockChain.GetBalance(bob.Address)}, два перекази по {half}:");
+        Console.WriteLine(blockChain.AddTransaction(Tx("Bob", "Eve", half)).message);
+        Console.WriteLine(blockChain.AddTransaction(Tx("Bob", "Dave", half)).message);
+
+        //3. Повторне додавання вже замайненої транзакції
+        var mined = blockChain.Chain.SelectMany(b => b.Transactions).First(t => !t.IsCoinbase);
+        Console.WriteLine($"\nПовтор замайненої: {blockChain.AddTransaction(mined).message}");
     }
     else
     {

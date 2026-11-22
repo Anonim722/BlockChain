@@ -23,6 +23,14 @@ namespace BlockChain_1
         private readonly MiningService _miningService;
         //Нагорода за знайдений блок
         public const decimal MiningReward = 50m;
+        //Пул транзакцій, що очікують на блок (додавати тільки через AddTransaction)
+        private readonly Mempool _mempool = new Mempool();
+
+        //Максимальна кількість звичайних транзакцій у блоці (без coinbase)
+        public int MaxTransactionsPerBlock { get; private set; } = 3;
+
+        //Вміст mempool — тільки для читання
+        public IReadOnlyList<Transaction> PendingTransactions => _mempool.PendingTransactions;
 
         //Сервіс для підрахунку балансів
         private readonly BalanceService _balanceService;
@@ -244,6 +252,56 @@ namespace BlockChain_1
         public bool HasSufficientBalance(string address, decimal amount, List<Transaction> pending)
         {
             return _balanceService.HasSufficientBalance(address, amount, Chain, pending);
+        }
+
+        //Чи є транзакція з таким Id у ланцюгу
+        public bool ContainsTransaction(string id)
+        {
+            return Chain.Any(block => block.Transactions.Any(t => t.Id == id));
+        }
+
+        //Додати транзакцію в mempool — з перевірками, яких сам mempool зробити не може
+        public (bool isSuccess, string message) AddTransaction(Transaction tx)
+        {
+            if (tx == null)
+            {
+                return (false, "Транзакція відсутня");
+            }
+
+            if (ContainsTransaction(tx.Id))
+            {
+                return (false, "Транзакція з таким Id вже є в Blockchain");
+            }
+
+            if (!tx.IsCoinbase &&
+                !HasSufficientBalance(tx.From, tx.Amount, _mempool.PendingTransactions.ToList()))
+            {
+                return (false, $"Недостатньо коштів: баланс {GetBalance(tx.From)}, " +
+                               "частина вже може бути зарезервована в mempool");
+            }
+
+            return _mempool.AddTransaction(tx);
+        }
+
+        //Замайнити блок з транзакцій mempool
+        public async Task<BlockCreationResult> MinePendingAsync(string minerAddress)
+        {
+            var batch = _mempool.Peek(MaxTransactionsPerBlock);
+
+            //Усі перевірки, coinbase і майнінг уже є в AddBlockAsync
+            var result = await AddBlockAsync(batch, minerAddress);
+
+            if (result.Success)
+            {
+                _mempool.RemoveTransactions(batch);
+            }
+
+            return result;
+        }
+
+        public void ClearMempool()
+        {
+            _mempool.Clear();
         }
 
         //Блоки, де людина була відправником або отримувачем

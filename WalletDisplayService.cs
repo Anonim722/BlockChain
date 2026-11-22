@@ -38,5 +38,6 @@ namespace BlockChain_1
             var b64 = Convert.ToBase64String(publicKey);
             return b64.Length <= 16 ? b64 : "..." + b64.Substring(b64.Length - 16);
         }
+
     }
 }

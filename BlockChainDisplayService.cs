@@ -84,6 +84,24 @@ namespace BlockChain_1
                 Console.WriteLine($"  - {error}");
             }
         }
+
+        public void DisplayMempool(IReadOnlyList<Transaction> pending, int maxPerBlock)
+        {
+            Console.WriteLine($"Mempool: {pending.Count} транзакцій (у наступний блок піде до {maxPerBlock})");
+
+            for (int i = 0; i < pending.Count; i++)
+            {
+                var tx = pending[i];
+                var mark = i < maxPerBlock ? "→" : " ";   //стрілка = піде в наступний блок
+                Console.WriteLine($" {mark} {i + 1}. {Cut(tx.From)} -> {Cut(tx.To)}: {tx.Amount}   Id {Cut(tx.Id)}");
+            }
+        }
+
+        private static string Cut(string s)
+        {
+            return s.Length > 8 ? s.Substring(0, 8) + "..." : s;
+        }
+
     }
 }
 
