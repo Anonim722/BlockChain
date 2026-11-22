@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using BlockChain_1.Service;
 using BlockChain_1.Models;
 
 namespace BlockChain_1
@@ -102,6 +98,36 @@ namespace BlockChain_1
             return s.Length > 8 ? s.Substring(0, 8) + "..." : s;
         }
 
+        public void PrintVerificationResult(VerificationResult r)
+        {
+            Console.WriteLine($"Id:       {r.TransactionId}");
+            Console.WriteLine($"Статус:   {(r.IsValid ? "✔ Valid" : "✘ Invalid")}");
+            Console.WriteLine($"Причина:  {r.Reason}");
+            Console.WriteLine($"Де:       {r.Location}");
+            Console.WriteLine(new string('-', 50));
+        }
+
+        public void PrintVerificationReport(TransactionVerificationCenter center)
+        {
+            Console.WriteLine("===== Звіт центру перевірки =====");
+            Console.WriteLine($"Перевірено транзакцій: {center.TotalChecked}");
+            Console.WriteLine($"Прийнято:              {center.AcceptedCount}");
+            Console.WriteLine($"Відхилено:             {center.RejectedCount}");
+
+            var byReason = center.Log
+                .Where(r => !r.IsValid)
+                .GroupBy(r => r.Reason)
+                .ToList();
+
+            if (byReason.Count > 0)
+            {
+                Console.WriteLine("Причини відмов:");
+                foreach (var group in byReason)
+                {
+                    Console.WriteLine($"  {group.Count()} × {group.Key}");
+                }
+            }
+        }
     }
 }
 

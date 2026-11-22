@@ -11,6 +11,7 @@ var transactionService = new TransactionService();
 var walletService = new WalletService();
 var walletManager = new WalletManager();
 var walletDisplay = new WalletDisplayService();
+var center = new TransactionVerificationCenter(blockChain);
 
 foreach (var name in new[] { "Alice", "Bob", "Charlie", "Dave", "Eve" })
 {
@@ -72,7 +73,7 @@ while (true)
 {
     Console.WriteLine();
     Console.WriteLine($"Menu (у mempool: {blockChain.PendingTransactions.Count})");
-    Console.WriteLine("addTr | add | display | validate | history | find | check | tamper | hide | remine | repair | experiment | rejectTest | signTest | clearTr | newWallet | wallets | findWallet | balance | balances | coinbaseTest | mempool | mempoolTest | exit");
+    Console.WriteLine("addTr | add | display | validate | history | find | check | tamper | hide | remine | repair | experiment | rejectTest | signTest | clearTr | newWallet | wallets | findWallet | balance | balances | coinbaseTest | mempool | mempoolTest | vcSeed | verify | vcList | vcReport | forgeryTest | exit");
     Console.Write("> ");
     var enter = Console.ReadLine();
 
@@ -108,8 +109,7 @@ while (true)
         try
         {
             var tx = transactionService.CreateTransaction(fromWallet, toWallet.Address, amount);
-            var (ok, message) = blockChain.AddTransaction(tx);
-            Console.WriteLine(ok ? $"✔ {message}" : $"✘ {message}");
+            displayService.PrintVerificationResult(center.Submit(tx));
         }
 
         catch (ArgumentException ex)
@@ -429,6 +429,111 @@ while (true)
         //3. Повторне додавання вже замайненої транзакції
         var mined = blockChain.Chain.SelectMany(b => b.Transactions).First(t => !t.IsCoinbase);
         Console.WriteLine($"\nПовтор замайненої: {blockChain.AddTransaction(mined).message}");
+    }
+    else if (enter == "vcSeed")
+    {
+        //Рівень 2: щонайменше 5 чесних транзакцій між різними користувачами
+        Console.WriteLine("--- Чесні транзакції ---");
+        var honest = new[]
+        {
+        ("Alice", "Bob", 3m), ("Bob", "Charlie", 2m), ("Charlie", "Dave", 4m),
+        ("Dave", "Eve", 1m), ("Eve", "Alice", 2.5m), ("Alice", "Dave", 1.5m)
+    };
+        foreach (var (from, to, sum) in honest)
+        {
+            var r = center.Submit(Tx(from, to, sum));
+            Console.WriteLine($"{from} -> {to}: {sum}   {(r.IsValid ? "✔" : "✘")} {r.Reason}");
+        }
+
+        //Підробки: зміна суми, зміна отримувача, відсутній підпис
+        Console.WriteLine("\n--- Підроблені ---");
+        var changedAmount = Tx("Alice", "Bob", 5);
+        changedAmount.Amount = 500;                                  //змінили суму після підпису
+
+        var changedTo = Tx("Bob", "Charlie", 2);
+        changedTo.To = GetWallet("Eve").Address;                     //змінили отримувача після підпису
+
+        var noSignature = Tx("Charlie", "Dave", 1);
+        noSignature.Signature = null;                                //прибрали підпис
+
+        var fakes = new[]
+        {
+        ("Змінена сума", changedAmount),
+        ("Змінений отримувач", changedTo),
+        ("Без підпису", noSignature)
+    };
+        foreach (var (name, tx) in fakes)
+        {
+            var r = center.Submit(tx);
+            Console.WriteLine($"{name,-20} {(r.IsValid ? "✔" : "✘")} {r.Reason}");
+        }
+
+        //Чи не потрапила жодна підробка в mempool або Blockchain
+        var leaked = fakes.Count(f =>
+            blockChain.ContainsTransaction(f.Item2.Id) ||
+            blockChain.PendingTransactions.Any(p => p.Id == f.Item2.Id));
+        Console.WriteLine(leaked == 0
+            ? "\n✔ Жодна некоректна транзакція не потрапила в mempool чи Blockchain"
+            : $"\n✘ Потрапило некоректних: {leaked}");
+
+        Console.WriteLine();
+        displayService.PrintVerificationReport(center);
+    }
+    else if (enter == "verify")
+    {
+        Console.Write("Id транзакції: ");
+        displayService.PrintVerificationResult(center.Verify(Console.ReadLine() ?? ""));
+    }
+    else if (enter == "vcList")
+    {
+        //Список перевірених — звідси зручно копіювати Id
+        foreach (var r in center.Log)
+        {
+            Console.WriteLine($"{r.TransactionId}  {r.Status,-7}  {r.Reason}");
+        }
+    }
+    else if (enter == "vcReport")
+    {
+        displayService.PrintVerificationReport(center);
+    }
+    else if (enter == "forgeryTest")
+    {
+        //Рівень 3: Bob намагається підписати транзакцію від імені Alice
+        var alice = GetWallet("Alice");
+        var bob = GetWallet("Bob");
+
+        //Спроба 1: адреса Alice як відправник, публічний ключ і підпис — Bob
+        var forged1 = new Transaction(alice.Address, bob.Address, 30);
+        forged1.SenderPublicKey = bob.PublicKey;
+        forged1.Signature = bob.Sign(forged1.GetDataToSign());
+
+        //Спроба 2: адреса І публічний ключ Alice, але підписує Bob своїм ключем
+        var forged2 = new Transaction(alice.Address, bob.Address, 30);
+        forged2.SenderPublicKey = alice.PublicKey;
+        forged2.Signature = bob.Sign(forged2.GetDataToSign());
+
+        //Справжня транзакція Alice
+        var genuine = Tx("Alice", "Bob", 30);
+
+        var cases = new[]
+        {
+        ("Bob: адреса Alice + свій ключ", forged1),
+        ("Bob: ключ Alice + свій підпис", forged2),
+        ("Справжня транзакція Alice", genuine)
+    };
+
+        Console.WriteLine("1) Наївна перевірка — тільки підпис (як без зв'язку адреса↔ключ):");
+        foreach (var (name, tx) in cases)
+        {
+            Console.WriteLine($"   {name,-32} {(center.NaiveSignatureCheck(tx) ? "✔ прийнято" : "✘ відхилено")}");
+        }
+
+        Console.WriteLine("\n2) Повна перевірка TransactionService (адреса = ключ, підпис = дані):");
+        foreach (var (name, tx) in cases)
+        {
+            var r = center.Submit(tx);
+            Console.WriteLine($"   {name,-32} {(r.IsValid ? "✔ Valid" : "✘ Invalid")}  {r.Reason}");
+        }
     }
     else
     {
