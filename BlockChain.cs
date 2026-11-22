@@ -21,8 +21,10 @@ namespace BlockChain_1
         private readonly bool _autoAdjust;
         private readonly double _targetBlockTime = 1.0;
         private readonly MiningService _miningService;
-        //Нагорода за знайдений блок
-        public const decimal MiningReward = 50m;
+        //Початкова винагорода за блок
+        public const decimal InitialReward = 50m;
+        //Кожні скільки блоків винагорода зменшується вдвічі
+        public const int HalvingInterval = 5;
         //Пул транзакцій, що очікують на блок (додавати тільки через AddTransaction)
         private readonly Mempool _mempool = new Mempool();
 
@@ -224,7 +226,7 @@ namespace BlockChain_1
             var transactionCopy = new List<Transaction>(transactions);
 
             //Нагорода майнеру — завжди перша транзакція блоку
-            var coinbase = Transaction.CreateCoinbaseTransaction(minerAddress, MiningReward);
+            var coinbase = Transaction.CreateCoinbaseTransaction(minerAddress, GetCurrentReward());
             transactionCopy.Insert(0, coinbase);
 
             var lastBlock = Chain[Chain.Count - 1];
@@ -246,6 +248,41 @@ namespace BlockChain_1
         public decimal GetBalance(string address)
         {
             return _balanceService.GetBalance(address, Chain);
+        }
+
+        //Винагорода за блок з указаним номером
+        public decimal GetRewardForBlock(int blockIndex)
+        {
+            if (blockIndex <= 0)
+            {
+                return 0m; //генезис-блок без нагороди
+            }
+
+            int halvings = (blockIndex - 1) / HalvingInterval;
+
+            var reward = InitialReward;
+            for (int i = 0; i < halvings; i++)
+            {
+                reward /= 2;
+            }
+
+            //Як у Bitcoin: не дрібніше 8 знаків після коми (1 сатоші = 0.00000001)
+            return Math.Round(reward, 8, MidpointRounding.ToZero);
+        }
+
+        //Поточна винагорода — за наступний блок, який буде замайнено
+        public decimal GetCurrentReward()
+        {
+            var nextIndex = Chain[Chain.Count - 1].Index + 1;
+            return GetRewardForBlock(nextIndex);
+        }
+
+        //Номер блоку, з якого почнеться наступний халвінг
+        public int GetNextHalvingBlock()
+        {
+            var nextIndex = Chain[Chain.Count - 1].Index + 1;
+            int halvings = (nextIndex - 1) / HalvingInterval;
+            return (halvings + 1) * HalvingInterval + 1;
         }
 
         //Чи вистачить коштів з урахуванням черги

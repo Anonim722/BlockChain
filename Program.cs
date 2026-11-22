@@ -73,7 +73,7 @@ while (true)
 {
     Console.WriteLine();
     Console.WriteLine($"Menu (у mempool: {blockChain.PendingTransactions.Count})");
-    Console.WriteLine("addTr | add | display | validate | history | find | check | tamper | hide | remine | repair | experiment | rejectTest | signTest | clearTr | newWallet | wallets | findWallet | balance | balances | coinbaseTest | mempool | mempoolTest | vcSeed | verify | vcList | vcReport | forgeryTest | exit");
+    Console.WriteLine("addTr | add | display | validate | history | find | check | tamper | hide | remine | repair | experiment | rejectTest | signTest | clearTr | newWallet | wallets | findWallet | balance | balances | coinbaseTest | mempool | mempoolTest | vcSeed | verify | vcList | vcReport | forgeryTest | reward | halvingTest | exit");
     Console.Write("> ");
     var enter = Console.ReadLine();
 
@@ -132,8 +132,8 @@ while (true)
 
         if (result.Success)
         {
-            Console.WriteLine($"{miner.Name} отримав нагороду {BlockChain.MiningReward}. " +
-                              $"У mempool лишилось: {blockChain.PendingTransactions.Count}");
+            Console.WriteLine($"{miner.Name} отримав нагороду {result.Block!.Transactions[0].Amount}. " +
+                  $"У mempool лишилось: {blockChain.PendingTransactions.Count}");
         }
     }
     else if (enter == "display")
@@ -534,6 +534,41 @@ while (true)
             var r = center.Submit(tx);
             Console.WriteLine($"   {name,-32} {(r.IsValid ? "✔ Valid" : "✘ Invalid")}  {r.Reason}");
         }
+    }
+    else if (enter == "reward")
+    {
+        var next = blockChain.Chain[blockChain.Chain.Count - 1].Index + 1;
+        Console.WriteLine($"Наступний блок:            #{next}");
+        Console.WriteLine($"Поточна винагорода:         {blockChain.GetCurrentReward()}");
+        Console.WriteLine($"Наступний халвінг з блоку:  #{blockChain.GetNextHalvingBlock()} " +
+                          $"(нагорода стане {blockChain.GetRewardForBlock(blockChain.GetNextHalvingBlock())})");
+
+        //Скільки фактично отримали майнери за кожен блок
+        Console.WriteLine("\nБлок | Нагорода (coinbase) | За правилом");
+        foreach (var block in blockChain.Chain.Where(b => b.Index > 0))
+        {
+            var coinbase = block.Transactions.FirstOrDefault(t => t.IsCoinbase);
+            Console.WriteLine($"{block.Index,4} | {coinbase?.Amount,19} | {blockChain.GetRewardForBlock(block.Index)}");
+        }
+    }
+    else if (enter == "halvingTest")
+    {
+        //Окремий ланцюг з низькою складністю — щоб швидко намайнити 16 блоків
+        var testChain = new BlockChain(2, autoAdjust: false);
+        var miner = GetWallet("Alice").Address;
+        decimal total = 0;
+
+        Console.WriteLine("Блок | Нагорода | Усього намайнено");
+        for (int i = 1; i <= 16; i++)
+        {
+            var r = await testChain.AddBlockAsync(new List<Transaction>(), miner);
+            var reward = r.Block!.Transactions[0].Amount;
+            total += reward;
+            Console.WriteLine($"{r.Block.Index,4} | {reward,8} | {total}");
+        }
+
+        Console.WriteLine($"\nПоточна винагорода: {testChain.GetCurrentReward()}");
+        Console.WriteLine($"Баланс Alice в тестовому ланцюгу: {testChain.GetBalance(miner)} (= сумі нагород)");
     }
     else
     {
