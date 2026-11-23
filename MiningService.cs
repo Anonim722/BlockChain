@@ -72,6 +72,7 @@ namespace BlockChain_1
                         PreviousHash = block.PreviousHash,
                         Nonce = threadId,
                         DifficultyAtMining = block.DifficultyAtMining,
+                        MerkleRoot = block.MerkleRoot,
                     };
                     long localAttempts = 0;
                     try

@@ -69,6 +69,8 @@ namespace BlockChain_1
             };
             //Обчислюємо хеш генезис-блоку
             genesisBlock.Hash = _hashingService.ComputeHash(genesisBlock);
+            //Корінь Меркла (у генезис-блоку транзакцій немає — буде порожній рядок)
+            genesisBlock.MerkleRoot = _hashingService.ComputeMerkleRoot(genesisBlock.Transactions);
             //Додаємо генезис-блок до ланцюжка
             Chain.Add(genesisBlock);
         }
@@ -235,6 +237,7 @@ namespace BlockChain_1
                 Index = lastBlock.Index + 1,
                 TimeStamp = DateTime.UtcNow,
                 Transactions = transactionCopy,
+                MerkleRoot = _hashingService.ComputeMerkleRoot(transactionCopy),
                 PreviousHash = lastBlock.Hash,
                 DifficultyAtMining = Difficulty
             };
@@ -357,6 +360,19 @@ namespace BlockChain_1
             {
                 var block = Chain[i];
 
+                //0. Чи відповідає Merkle Root транзакціям блоку
+                var computedRoot = _hashingService.ComputeMerkleRoot(block.Transactions);
+                if (block.MerkleRoot != computedRoot)
+                {
+                    return new BlockValidationResult
+                    {
+                        BlockIndex = block.Index,
+                        Error = ValidationError.InvalidMerkleRoot,
+                        Message = $"Блок #{block.Index}: Merkle Root {Short(block.MerkleRoot)} " +
+                                  $"не відповідає транзакціям ({Short(computedRoot)}) — транзакції змінено"
+                    };
+                }
+
                 //1. Чи відповідає збережений Hash даним блоку
                 var recalculated = _hashingService.ComputeHash(block);
                 if (block.Hash != recalculated)
@@ -420,6 +436,8 @@ namespace BlockChain_1
                 block.PreviousHash = Chain[i - 1].Hash;
                 block.Nonce = 0;
 
+                //Транзакції могли змінитися — перераховуємо корінь перед майнінгом
+                block.MerkleRoot = _hashingService.ComputeMerkleRoot(block.Transactions);
                 //Майнимо з ПОЧАТКОВОЮ складністю цього блоку
                 _miningService.MineBlockParallel(block, block.DifficultyAtMining, Environment.ProcessorCount);
 

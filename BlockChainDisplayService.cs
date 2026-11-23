@@ -26,6 +26,7 @@ namespace BlockChain_1
             {
                 Console.WriteLine($"   - {tx.ToRawString()}");
             }
+            Console.WriteLine($"Merkle Root: {block.MerkleRoot}");
             Console.WriteLine($"Previous Hash: {block.PreviousHash}");
             Console.WriteLine($"Hash: {block.Hash}");
             Console.WriteLine(new string('-', 50));

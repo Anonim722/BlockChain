@@ -73,7 +73,7 @@ while (true)
 {
     Console.WriteLine();
     Console.WriteLine($"Menu (у mempool: {blockChain.PendingTransactions.Count})");
-    Console.WriteLine("addTr | add | display | validate | history | find | check | tamper | hide | remine | repair | experiment | rejectTest | signTest | clearTr | newWallet | wallets | findWallet | balance | balances | coinbaseTest | mempool | mempoolTest | vcSeed | verify | vcList | vcReport | forgeryTest | reward | halvingTest | exit");
+    Console.WriteLine("addTr | add | display | validate | history | find | check | tamper | hide | remine | repair | experiment | rejectTest | signTest | clearTr | newWallet | wallets | findWallet | balance | balances | coinbaseTest | mempool | mempoolTest | vcSeed | verify | vcList | vcReport | forgeryTest | reward | halvingTest | merkle | merkleTest | exit");
     Console.Write("> ");
     var enter = Console.ReadLine();
 
@@ -184,7 +184,9 @@ while (true)
         var block = AskBlock(blockChain);
         if (block == null) continue;
 
+        block.MerkleRoot = hashingService.ComputeMerkleRoot(block.Transactions);
         block.Hash = hashingService.ComputeHash(block);
+        Console.WriteLine($"Новий Merkle Root: {block.MerkleRoot}");
         Console.WriteLine($"Новий Hash блоку #{block.Index}: {block.Hash}");
     }
     else if (enter == "remine")
@@ -569,6 +571,66 @@ while (true)
 
         Console.WriteLine($"\nПоточна винагорода: {testChain.GetCurrentReward()}");
         Console.WriteLine($"Баланс Alice в тестовому ланцюгу: {testChain.GetBalance(miner)} (= сумі нагород)");
+    }
+    else if (enter == "merkle")
+    {
+        //Показати дерево Меркла блоку по рівнях
+        var block = AskBlock(blockChain);
+        if (block == null) continue;
+
+        var levels = hashingService.GetMerkleLevels(block.Transactions);
+        if (levels.Count == 0)
+        {
+            Console.WriteLine("Блок без транзакцій — Merkle Root порожній.");
+            continue;
+        }
+
+        for (int level = 0; level < levels.Count; level++)
+        {
+            var title = level == 0 ? "Листя (хеші транзакцій)"
+                      : level == levels.Count - 1 ? "Корінь"
+                      : $"Рівень {level}";
+            Console.WriteLine($"{title}:");
+            Console.WriteLine("   " + string.Join("   ", levels[level].Select(h => h.Substring(0, 8) + "...")));
+        }
+
+        var root = levels[levels.Count - 1][0];
+        Console.WriteLine($"\nMerkleRoot у блоці: {block.MerkleRoot}");
+        Console.WriteLine($"Збігається з транзакціями: {(block.MerkleRoot == root ? "✔" : "✘")}");
+    }
+    else if (enter == "merkleTest")
+    {
+        //Окремий ланцюг, щоб не псувати основний
+        var test = new BlockChain(2, autoAdjust: false);
+        var alice = GetWallet("Alice").Address;
+
+        await test.AddBlockAsync(new List<Transaction>(), alice);       //стартові кошти Alice
+        await test.AddBlockAsync(new List<Transaction>
+    {
+        Tx("Alice", "Bob", 5), Tx("Alice", "Charlie", 3), Tx("Alice", "Dave", 2)
+    }, alice);
+
+        var block = test.Chain[2];   //блок з 4 транзакціями (coinbase + 3)
+
+        void Show(string step)
+        {
+            var r = test.FindFirstInvalidBlock();
+            Console.WriteLine($"{step,-42} {(r.IsValid ? "✔ валідний" : $"✘ {r.Error}")}");
+        }
+
+        Show("Чесний ланцюг");
+
+        block.Transactions[1].Amount = 500;
+        Show("1. Змінили суму транзакції");
+
+        block.MerkleRoot = hashingService.ComputeMerkleRoot(block.Transactions);
+        Show("2. + перерахували Merkle Root");
+
+        block.Hash = hashingService.ComputeHash(block);
+        Show("3. + перерахували Hash (без майнінгу)");
+
+        var repair = test.RepairChain(2);
+        Show($"4. Перемайнили блок (спроб: {repair.TotalAttempts})");
     }
     else
     {

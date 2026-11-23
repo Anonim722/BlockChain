@@ -23,6 +23,9 @@ namespace BlockChain_1
         //Хеш поточного блоку
         public string Hash { get; set; }
 
+        //Корінь Меркла — один хеш, що "підсумовує" всі транзакції блоку
+        public string MerkleRoot { get; set; } = string.Empty;
+
         //Число, яке підбирається для знаходження хешу (Proof of Work)
         public int Nonce { get; set; }
 
