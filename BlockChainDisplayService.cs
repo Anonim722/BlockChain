@@ -129,6 +129,28 @@ namespace BlockChain_1
                 }
             }
         }
+
+        public void PrintSecurityAudit(List<AuditResult> results)
+        {
+            Console.WriteLine();
+            Console.WriteLine("========== SECURITY AUDIT ==========");
+            foreach (var r in results)
+            {
+                Console.WriteLine($"{r.Name,-26}{(r.Passed ? "PASS" : "FAIL")}");
+            }
+            Console.WriteLine(new string('=', 36));
+
+            int passed = results.Count(r => r.Passed);
+            int percent = results.Count == 0 ? 0 : passed * 100 / results.Count;
+            Console.WriteLine($"Security score: {passed}/{results.Count} ({percent}%)");
+
+            //Деталі — чому саме PASS/FAIL
+            Console.WriteLine("\nДеталі:");
+            foreach (var r in results)
+            {
+                Console.WriteLine($"  [{(r.Passed ? "PASS" : "FAIL")}] {r.Name}: {r.Details}");
+            }
+        }
     }
 }
 

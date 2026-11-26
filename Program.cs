@@ -73,7 +73,7 @@ while (true)
 {
     Console.WriteLine();
     Console.WriteLine($"Menu (у mempool: {blockChain.PendingTransactions.Count})");
-    Console.WriteLine("addTr | add | display | validate | history | find | check | tamper | hide | remine | repair | experiment | rejectTest | signTest | clearTr | newWallet | wallets | findWallet | balance | balances | coinbaseTest | mempool | mempoolTest | vcSeed | verify | vcList | vcReport | forgeryTest | reward | halvingTest | merkle | merkleTest | exit");
+    Console.WriteLine("addTr | add | display | validate | history | find | check | tamper | hide | remine | repair | experiment | rejectTest | signTest | clearTr | newWallet | wallets | findWallet | balance | balances | coinbaseTest | mempool | mempoolTest | vcSeed | verify | vcList | vcReport | forgeryTest | reward | halvingTest | merkle | merkleTest | audit | exit");
     Console.Write("> ");
     var enter = Console.ReadLine();
 
@@ -631,6 +631,12 @@ while (true)
 
         var repair = test.RepairChain(2);
         Show($"4. Перемайнили блок (спроб: {repair.TotalAttempts})");
+    }
+    else if (enter == "audit")
+    {
+        Console.WriteLine("Запуск аудиту безпеки на тестовому ланцюгу...");
+        var auditResults = await new SecurityAuditService().RunAsync();
+        displayService.PrintSecurityAudit(auditResults);
     }
     else
     {
